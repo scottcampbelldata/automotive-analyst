@@ -37,10 +37,27 @@ ALLOWED = {
     "v_robot_candidates", "v_validation",
 }
 
+# Forbidden tokens. Two reasons a single read-only SELECT can still be dangerous:
+#   (a) write / DDL / admin *statements*; and
+#   (b) info-leak / admin *functions* that a SELECT can call (version(),
+#       current_setting(), current_user, dblink(), ...). The keyword list below
+#       covers both. A blanket ban on any pg_* identifier catches catalog tables
+#       and admin functions in one rule.
+# NB: `pg_*` must NOT be matched with \b…\b — `_` is a word character, so
+# `\bpg_read\b` fails to match `pg_read_file`. We match the whole pg_ token.
+# The read-only DB role is the ultimate backstop; this denylist is the app layer.
 FORBIDDEN = re.compile(
+    # (a) write / DDL / admin statements
     r'\b(insert|update|delete|drop|alter|truncate|grant|revoke|merge|call|copy|'
     r'vacuum|reindex|cluster|lock|begin|commit|rollback|reset|execute|prepare|'
-    r'listen|notify|create|comment|do|pg_sleep|pg_read|pg_ls|lo_import|lo_export)\b',
+    r'listen|notify|create|comment|do|'
+    # (b) server / identity info-leak & cross-DB functions
+    r'current_setting|set_config|current_user|session_user|current_database|'
+    r'current_catalog|current_schema|version|inet_server_addr|inet_client_addr|'
+    r'inet_server_port|inet_client_port|dblink|dblink_exec|dblink_connect|'
+    r'txid_current|lo_import|lo_export|lo_read|lo_get)\b'
+    # any pg_* identifier (catalogs + admin funcs)
+    r'|\bpg_\w+',
     re.I,
 )
 
