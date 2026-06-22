@@ -58,6 +58,8 @@ REJECTED_CASES = [
     ("set_config", "SELECT set_config('work_mem', '1GB', false)"),
     ("dblink via lateral", "SELECT * FROM fact_production f, LATERAL dblink('host=x', 'SELECT 1') AS t(a int)"),
     ("union to information_schema", "SELECT line FROM fact_production UNION ALL SELECT table_name FROM information_schema.tables"),
+    ("trailing alias", "SELECT station, ROUND(SUM(downtime_min) / 60.0, 2) AS"),
+    ("trailing alias before limit", "SELECT station, ROUND(SUM(downtime_min) / 60.0, 2) AS\nLIMIT 1000"),
 ]
 
 

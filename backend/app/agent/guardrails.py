@@ -68,6 +68,11 @@ _CTE = re.compile(r'(?:with|,)\s+([a-z_]\w*)\s+as\s*\(', re.I)
 
 _LINE_COMMENT = re.compile(r'--[^\n]*')
 _BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
+_INCOMPLETE_TAIL = re.compile(
+    r'(\b(as|and|or|where|from|join|on|group\s+by|order\s+by|having|union)\b|'
+    r'[,+\-*/(])\s*(?:limit\s+\d+\s*)?$',
+    re.I,
+)
 
 DEFAULT_LIMIT = 1000
 
@@ -100,6 +105,8 @@ def validate_sql(raw: str):
         return False, "query contains a forbidden keyword (write / DDL / admin)", None
     if re.search(r'\bselect\b.*\binto\b', low, re.S):
         return False, "SELECT INTO is not allowed", None
+    if _INCOMPLETE_TAIL.search(s):
+        return False, "query appears incomplete", None
 
     ctes = {m.lower() for m in _CTE.findall(low)}
     rels = [m.lower() for m in _RELATION.findall(low)]

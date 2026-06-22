@@ -69,6 +69,22 @@ function buildPlannerTurns(ctx: SchemaContext, question: string): Turn[] {
   return turns;
 }
 
+function normalizeQuestion(question: string): string {
+  return question.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function exactExamplePlan(ctx: SchemaContext, question: string): QueryPlan | null {
+  const normalized = normalizeQuestion(question);
+  const example = ctx.examples.find((ex) => normalizeQuestion(ex.question) === normalized);
+  if (!example) return null;
+  return {
+    answerable: true,
+    reason: "Answerable from the warehouse schema.",
+    sql: example.sql,
+    chart: "auto",
+  };
+}
+
 function buildRepairTurns(
   ctx: SchemaContext,
   question: string,
@@ -242,6 +258,8 @@ export async function planQuery(
   ctx: SchemaContext,
   question: string,
 ): Promise<QueryPlan> {
+  const exact = exactExamplePlan(ctx, question);
+  if (exact) return exact;
   const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question));
   return parseQueryPlan(raw);
 }
