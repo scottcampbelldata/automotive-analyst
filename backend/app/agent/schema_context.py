@@ -99,3 +99,19 @@ def build_messages(question: str):
         msgs.append({"role": "assistant", "content": a})
     msgs.append({"role": "user", "content": question})
     return msgs
+
+
+def build_repair_messages(question: str, bad_sql: str, error: str):
+    """One corrective turn: show the model its failed SQL and the DB error so it
+    can return a fixed single SELECT (self-correction)."""
+    msgs = build_messages(question)
+    msgs.append({"role": "assistant", "content": bad_sql})
+    msgs.append({
+        "role": "user",
+        "content": (
+            f"That query failed with this PostgreSQL error:\n{error}\n\n"
+            "Return a corrected single SELECT that fixes the error. "
+            "Output only SQL, no commentary."
+        ),
+    })
+    return msgs
