@@ -164,21 +164,13 @@ function extractSql(raw: string): string | null {
   return match[0].trim();
 }
 
-function parseQueryPlanOrSql(raw: string): QueryPlan {
-  try {
-    return parseQueryPlan(raw);
-  } catch {
-    const sql = extractSql(raw);
-    if (!sql) {
-      throw new Error("The model did not return usable SQL while planning the query.");
-    }
-    return {
-      answerable: true,
-      reason: "Answerable from the warehouse schema.",
-      sql,
-      chart: "auto",
-    };
-  }
+function sqlPlan(sql: string): QueryPlan {
+  return {
+    answerable: true,
+    reason: "Answerable from the warehouse schema.",
+    sql,
+    chart: "auto",
+  };
 }
 
 async function providerError(res: Response, name: string): Promise<string> {
@@ -313,7 +305,21 @@ export async function planQuery(
   const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question), {
     responseMimeType: "application/json",
   });
-  return parseQueryPlanOrSql(raw);
+  try {
+    return parseQueryPlan(raw);
+  } catch {
+    const plannedSql = extractSql(raw);
+    if (plannedSql) return sqlPlan(plannedSql);
+  }
+  const rawSql = await DISPATCH[creds.provider](creds, ctx.system, buildTurns(ctx, question));
+  const fallbackSql = extractSql(rawSql);
+  if (fallbackSql) return sqlPlan(fallbackSql);
+  return {
+    answerable: false,
+    reason: "The model did not produce SQL from the warehouse schema for that question.",
+    sql: null,
+    chart: "table",
+  };
 }
 
 export async function repairSQL(
