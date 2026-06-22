@@ -24,11 +24,51 @@ export const DEFAULT_MODEL: Record<Provider, string> = {
 };
 
 // Suggestions shown in the model picker; the field stays free-text so a visitor
-// can use whatever model their key has access to.
+// can use whatever model their key has access to. Text/chat + reasoning models
+// only — no image, audio/voice, video, or embedding models. Pulled from each
+// provider's live model docs (June 2026), not guessed.
 export const MODEL_SUGGESTIONS: Record<Provider, string[]> = {
-  anthropic: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-fable-5", "claude-haiku-4-5"],
-  openai: ["gpt-5.4-mini", "gpt-5.5", "gpt-5.4", "gpt-5.4-nano"],
-  gemini: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3-flash-preview"],
+  anthropic: [
+    "claude-opus-4-8",
+    "claude-fable-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+  ],
+  openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.3-codex",
+    "gpt-5.2",
+    "gpt-5.2-pro",
+    "gpt-5.1",
+    "gpt-5",
+    "gpt-5-pro",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "o3-pro",
+    "o3",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4o-mini",
+  ],
+  gemini: [
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+  ],
 };
 
 const STORAGE_KEY = "analyst.creds";
