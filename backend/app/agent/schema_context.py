@@ -91,27 +91,13 @@ FEW_SHOT = [
 ]
 
 
-def build_messages(question: str):
-    """Few-shot user/assistant turns + the live question."""
-    msgs = []
-    for q, a in FEW_SHOT:
-        msgs.append({"role": "user", "content": q})
-        msgs.append({"role": "assistant", "content": a})
-    msgs.append({"role": "user", "content": question})
-    return msgs
+def context() -> dict:
+    """The schema grounding the browser needs to build a provider request.
 
-
-def build_repair_messages(question: str, bad_sql: str, error: str):
-    """One corrective turn: show the model its failed SQL and the DB error so it
-    can return a fixed single SELECT (self-correction)."""
-    msgs = build_messages(question)
-    msgs.append({"role": "assistant", "content": bad_sql})
-    msgs.append({
-        "role": "user",
-        "content": (
-            f"That query failed with this PostgreSQL error:\n{error}\n\n"
-            "Return a corrected single SELECT that fixes the error. "
-            "Output only SQL, no commentary."
-        ),
-    })
-    return msgs
+    Generation happens client-side (bring-your-own-key), so this is the single
+    source of truth for the schema prompt + few-shot examples, served to the
+    frontend rather than baked into it."""
+    return {
+        "system": SCHEMA_PROMPT,
+        "examples": [{"question": q, "sql": a} for q, a in FEW_SHOT],
+    }

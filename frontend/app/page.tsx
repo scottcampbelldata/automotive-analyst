@@ -1,16 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api, AskResponse } from "@/lib/api";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
+import { api, RunResponse } from "@/lib/api";
+import { generateSQL, repairSQL, SchemaContext } from "@/lib/providers";
+import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
+import { KeyPanel } from "@/components/KeyPanel";
 
 const DASHBOARD_URL = "https://factory.scottcampbell.io";
 const AXIS = { fill: "#8896b4", fontSize: 12 };
 const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
 
-function ResultChart({ res }: { res: AskResponse }) {
+type Phase = "idle" | "generating" | "running" | "repairing";
+
+function ResultChart({ res }: { res: RunResponse }) {
   const cols = res.columns ?? [];
   const rows = res.rows ?? [];
 
@@ -73,27 +78,85 @@ function ResultChart({ res }: { res: AskResponse }) {
   );
 }
 
+const PHASE_LABEL: Record<Phase, string> = {
+  idle: "",
+  generating: "Writing SQL with your model…",
+  running: "Validating and running read-only…",
+  repairing: "Query failed — asking the model to fix it…",
+};
+
 export default function Home() {
+  const [creds, setCreds] = useState<Creds | null>(null);
+  const [editingKey, setEditingKey] = useState(false);
+  const [ctx, setCtx] = useState<SchemaContext | null>(null);
   const [samples, setSamples] = useState<string[]>([]);
+
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<AskResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<RunResponse | null>(null);
+  const [genSql, setGenSql] = useState<string | null>(null);
+  const [repaired, setRepaired] = useState(false);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [err, setErr] = useState<string | null>(null);
+
+  const loading = phase !== "idle";
+  const providerLabel = creds ? PROVIDERS.find((p) => p.id === creds.provider)?.label : null;
 
   useEffect(() => {
-    api.askSamples().then(setSamples).catch(() => setSamples([]));
+    setCreds(loadCreds());
+    api.samples().then(setSamples).catch(() => setSamples([]));
+    api.context().then(setCtx).catch(() => setCtx(null));
   }, []);
 
   async function run(question: string) {
     if (!question.trim()) return;
-    setLoading(true);
-    setRes(null);
+    if (!creds) {
+      setEditingKey(true);
+      return;
+    }
+    let context = ctx;
+    if (!context) {
+      try {
+        context = await api.context();
+        setCtx(context);
+      } catch {
+        setErr("Could not load the schema context from the API. Is the backend reachable?");
+        return;
+      }
+    }
+
     setQ(question);
+    setRes(null);
+    setErr(null);
+    setGenSql(null);
+    setRepaired(false);
+
     try {
-      setRes(await api.ask(question));
-    } catch (e) {
-      setRes({ ok: false, stage: "network", error: String(e) });
+      setPhase("generating");
+      const sql = await generateSQL(creds, context, question);
+      setGenSql(sql);
+
+      setPhase("running");
+      let r = await api.run(question, sql);
+
+      if (!r.ok && r.stage === "execute") {
+        setPhase("repairing");
+        try {
+          const fixed = await repairSQL(creds, context, question, sql, r.error ?? "");
+          setGenSql(fixed);
+          const r2 = await api.run(question, fixed);
+          if (r2.ok) setRepaired(true);
+          r = r2;
+        } catch {
+          /* keep the original execute error */
+        }
+      }
+
+      if (r.sql) setGenSql(r.sql); // the exact SQL the server validated/ran
+      setRes(r);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setPhase("idle");
     }
   }
 
@@ -106,24 +169,54 @@ export default function Home() {
             Automotive Analyst
           </h1>
           <p className="text-mute text-sm mt-1 max-w-2xl">
-            Ask the assembly-plant warehouse a question in plain English. The
-            agent grounds it in the star schema, writes PostgreSQL, validates it
-            through read-only guardrails, and runs it — and always shows you the
-            query behind the answer.
+            Ask the assembly-plant warehouse a question in plain English. Your model
+            writes PostgreSQL, the server validates it through read-only guardrails and
+            runs it — and you always see the query behind the answer.
           </p>
         </div>
-        <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
+        <a href={DASHBOARD_URL} className="badge shrink-0" target="_blank" rel="noreferrer">
           Dashboard ↗
         </a>
       </header>
 
+      {/* Key status / management */}
+      {creds && !editingKey && (
+        <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
+          <span className="text-mute">
+            Using <span className="text-white">{providerLabel}</span>
+            <span className="text-faint"> · {creds.model}</span>
+            <span className="text-good"> · key in this tab only</span>
+          </span>
+          <span className="flex gap-3">
+            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-white">
+              Change key
+            </button>
+            <button
+              onClick={() => { clearCreds(); setCreds(null); }}
+              className="text-mute hover:text-accent"
+            >
+              Clear
+            </button>
+          </span>
+        </div>
+      )}
+
+      {(!creds || editingKey) && (
+        <KeyPanel
+          initial={creds}
+          onSaved={(c) => { setCreds(c); setEditingKey(false); }}
+          onCancel={creds ? () => setEditingKey(false) : undefined}
+        />
+      )}
+
+      {/* Ask box */}
       <div className="card">
         <div className="flex gap-2">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run(q)}
-            placeholder="e.g. which station lost the most downtime hours on the night crew?"
+            placeholder="e.g. which station lost the most hours on D-crew last quarter?"
             className="flex-1 bg-[var(--panel-2)] border border-edge rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-faint outline-none focus:border-accent"
           />
           <button
@@ -131,7 +224,7 @@ export default function Home() {
             disabled={loading}
             className="px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-50"
           >
-            {loading ? "Thinking…" : "Ask"}
+            {loading ? "Working…" : creds ? "Ask" : "Add key"}
           </button>
         </div>
         <div className="flex flex-wrap gap-2 mt-3">
@@ -139,45 +232,62 @@ export default function Home() {
             <button
               key={s}
               onClick={() => run(s)}
-              className="text-xs text-mute border border-edge rounded-full px-3 py-1 hover:border-accent hover:text-white transition-colors"
+              disabled={loading}
+              className="text-xs text-mute border border-edge rounded-full px-3 py-1 hover:border-accent hover:text-white transition-colors disabled:opacity-40"
             >
               {s}
             </button>
           ))}
         </div>
+        {loading && <div className="text-xs text-faint mt-3">{PHASE_LABEL[phase]}</div>}
       </div>
 
-      {res && (
-        <div className="card space-y-4">
-          {res.ok ? (
-            <>
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="section-title">Answer</div>
-                <span className="text-xs text-good border border-good/40 rounded-full px-2.5 py-0.5">
-                  guardrail: {res.guardrail}
-                </span>
-              </div>
-              <ResultChart res={res} />
-              <div className="text-xs text-faint">{res.row_count} row(s)</div>
-            </>
-          ) : (
-            <div>
-              <div className="text-accent font-medium mb-1">
-                {res.stage === "guardrail"
-                  ? "Query blocked by guardrails"
-                  : `Could not answer (${res.stage})`}
-              </div>
-              <p className="text-sm text-mute">{res.error}</p>
-            </div>
-          )}
+      {err && (
+        <div className="card">
+          <div className="text-accent font-medium mb-1">Couldn&apos;t complete the request</div>
+          <p className="text-sm text-mute">{err}</p>
+        </div>
+      )}
 
-          {res.sql && (
+      {(res || genSql) && (
+        <div className="card space-y-4">
+          {res &&
+            (res.ok ? (
+              <>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="section-title">Answer</div>
+                  <span className="flex gap-2">
+                    {repaired && (
+                      <span className="text-xs text-mute border border-edge rounded-full px-2.5 py-0.5">
+                        self-corrected ↻
+                      </span>
+                    )}
+                    <span className="text-xs text-good border border-good/40 rounded-full px-2.5 py-0.5">
+                      guardrail: {res.guardrail}
+                    </span>
+                  </span>
+                </div>
+                <ResultChart res={res} />
+                <div className="text-xs text-faint">{res.row_count} row(s)</div>
+              </>
+            ) : (
+              <div>
+                <div className="text-accent font-medium mb-1">
+                  {res.stage === "guardrail"
+                    ? "Query blocked by guardrails"
+                    : `Could not answer (${res.stage})`}
+                </div>
+                <p className="text-sm text-mute">{res.error}</p>
+              </div>
+            ))}
+
+          {genSql && (
             <div>
               <div className="text-xs text-faint uppercase tracking-wider mb-1.5">
-                Generated SQL
+                Generated SQL{providerLabel ? ` · ${providerLabel}` : ""}
               </div>
               <pre className="bg-[var(--panel-2)] border border-edge rounded-lg p-3 text-xs text-[#cdd7ea] overflow-auto whitespace-pre-wrap">
-                {res.sql}
+                {genSql}
               </pre>
             </div>
           )}
@@ -188,10 +298,10 @@ export default function Home() {
         <div className="eyebrow mb-2">How it works</div>
         <div className="grid sm:grid-cols-4 gap-3 text-sm">
           {[
-            ["1 · Ground", "The question is paired with the star-schema definition and few-shot examples."],
-            ["2 · Generate", "An LLM writes a single PostgreSQL SELECT — no commentary."],
-            ["3 · Guardrail", "Read-only check: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
-            ["4 · Execute", "Run as a read-only role inside a read-only transaction with a statement timeout."],
+            ["1 · Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly — never our server."],
+            ["2 · Generate", "Your model writes one PostgreSQL SELECT, grounded in the star schema served by the API."],
+            ["3 · Guardrail", "The server validates it: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
+            ["4 · Execute", "Run as a read-only role inside a read-only transaction with a statement timeout. Self-corrects once on error."],
           ].map(([t, d]) => (
             <div key={t} className="border border-edge rounded-lg p-3">
               <div className="text-accent text-xs font-semibold mb-1">{t}</div>
@@ -202,9 +312,9 @@ export default function Home() {
       </div>
 
       <footer className="text-xs text-faint pt-4 border-t border-edge">
-        Built by Scott Campbell · FastAPI · PostgreSQL · Next.js · Recharts.
-        Reads the same warehouse as the dashboard, read-only. Data is fully
-        synthetic; no proprietary or employer data.
+        Built by Scott Campbell · FastAPI · PostgreSQL · Next.js · Recharts. Bring-your-own-key
+        (Claude / OpenAI / Gemini); the key never touches the server. Reads the same warehouse as
+        the dashboard, read-only. Data is fully synthetic; no proprietary or employer data.
       </footer>
     </main>
   );

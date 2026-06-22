@@ -1,11 +1,14 @@
 """
-Configuration for the Automotive Analyst.
+Configuration for the Automotive Analyst backend.
 
-The agent connects to the SAME PostgreSQL database that powers the dashboard
-(manufacturing-intelligence-platform) -- it does NOT own or duplicate the data.
-Use a READ-ONLY database role here (factory_ro); the agent never writes.
+This service holds **no LLM API key**. Visitors bring their own key (Claude,
+OpenAI, or Gemini); SQL is generated in their browser and sent here only to be
+validated and executed. So the backend's only secret is the read-only database
+connection. It connects to the SAME PostgreSQL that powers the dashboard
+(manufacturing-intelligence-platform) via a READ-ONLY role (factory_ro).
 """
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,16 +34,10 @@ CORS_ORIGINS = [
     if o.strip()
 ]
 
-# SQL generation provider: "anthropic" (default) or "ollama".
-AGENT_PROVIDER = os.environ.get("AGENT_PROVIDER", "anthropic")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "sqlcoder")
-
-# Guardrails on the public endpoint (it calls a paid LLM + the DB per request).
+# Guardrails on the public /run endpoint (it executes client-supplied SQL).
 MAX_QUESTION_CHARS = int(os.environ.get("MAX_QUESTION_CHARS", "500"))
-RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "20"))          # requests
+MAX_SQL_CHARS = int(os.environ.get("MAX_SQL_CHARS", "4000"))
+RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "20"))            # requests
 RATE_LIMIT_WINDOW_S = int(os.environ.get("RATE_LIMIT_WINDOW_S", "60"))  # per window
 QUERY_TIMEOUT_MS = int(os.environ.get("QUERY_TIMEOUT_MS", "5000"))
 

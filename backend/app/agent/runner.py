@@ -4,14 +4,17 @@ Even though guardrails.py already rejects writes, the database itself enforces
 read-only here as a second line of defense.
 """
 from .. import db
+from ..config import QUERY_TIMEOUT_MS
 
 
-async def run_readonly(sql: str, timeout_ms: int = 5000):
+async def run_readonly(sql: str, timeout_ms: int = QUERY_TIMEOUT_MS):
     """Run sql in a read-only transaction. Returns (columns, rows)."""
     assert db._pool is not None, "pool not initialized"
     async with db._pool.acquire() as conn:
-        await conn.execute(f"SET statement_timeout = {int(timeout_ms)}")
+        # SET LOCAL keeps the timeout scoped to this transaction so it resets on
+        # commit and never bleeds onto the next borrower of this pooled connection.
         async with conn.transaction(readonly=True):
+            await conn.execute(f"SET LOCAL statement_timeout = {int(timeout_ms)}")
             records = await conn.fetch(sql)
     if not records:
         return [], []

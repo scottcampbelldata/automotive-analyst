@@ -1,60 +1,77 @@
-# Automotive Analyst — natural-language analytics agent
+# Automotive Analyst — bring-your-own-key text-to-SQL agent
 
-A text-to-SQL agent that answers plain-English questions about an automotive
-final-assembly plant by writing, validating, and running PostgreSQL against the
-same warehouse that powers the [factory dashboard](https://factory.scottcampbell.io).
-Every answer shows the exact query behind it.
+Ask an automotive final-assembly plant's data warehouse a question in plain
+English — *"which station lost the most hours on D-crew last quarter?"* — and your
+own LLM writes the PostgreSQL, the server validates it through read-only
+guardrails, runs it, and returns the answer **with the query shown**.
+
+It reads the same warehouse that powers the
+[factory dashboard](https://factory.scottcampbell.io), read-only.
+
+<!-- After pushing, set OWNER to your GitHub user/org for the badge to render. -->
+![CI](https://github.com/OWNER/automotive-analyst/actions/workflows/ci.yml/badge.svg)
 
 **Live:** https://analyst.scottcampbell.io  ·  **API:** https://analyst-api.scottcampbell.io
 
-> Companion to the [Manufacturing Intelligence dashboard](https://factory.scottcampbell.io).
-> The two are independent projects that read the **same** Postgres warehouse —
-> the dashboard with a read/write app role, the analyst with a dedicated
-> **read-only** role. Data is fully synthetic; no proprietary or employer data.
+> Companion to the **Manufacturing Intelligence dashboard**, but a fully separate
+> project. Data is synthetic; no proprietary or employer data.
 
 ---
 
-## What it does
+## The interesting part: bring-your-own-key, key never touches the server
 
-Ask `"Which station lost the most downtime hours on the night crew?"` and the
-agent grounds the question in the star schema, generates a single PostgreSQL
-`SELECT`, runs it through read-only guardrails, executes it as a read-only role,
-and renders the result as a chart, KPI, or table — alongside the SQL it ran.
+Visitors use **their own** Claude, OpenAI, or Gemini API key. The key is held only
+in the browser tab's `sessionStorage` (wiped on close) and is sent **directly** to
+the chosen provider — it never reaches this site's backend. Open DevTools and
+you'll see the key go only to `api.anthropic.com` / `api.openai.com` / Google.
 
-## Why it's built this way
+That means the backend has **no LLM secret at all**. Its only job is to be a
+**fail-safe SQL gateway**: it serves the schema grounding, then accepts SQL and
+runs it safely. Accepting client-supplied SQL is fine *by design* — that's exactly
+what the guardrails and the read-only database role are for.
 
-Letting an LLM write SQL against a real database is exactly where naive
-implementations get dangerous. The safety model is layered, defense-in-depth:
+## Layered safety (the senior signal)
+
+Letting an LLM write SQL against a real database is where naive implementations
+get dangerous. The safety model is defense-in-depth:
 
 1. **Application guardrails** ([`guardrails.py`](backend/app/agent/guardrails.py)) —
    single statement only (no `;` chaining), `SELECT`/`WITH` only, no DDL/admin
-   keywords, table/view **allow-list**, no `SELECT … INTO`, and a `LIMIT` is
-   injected if the model omits one.
-2. **Database enforcement** — a dedicated **read-only role** (`factory_ro`)
-   running inside a `READ ONLY` transaction with a statement timeout. Even a
-   query that somehow slipped the app layer cannot write or hang the box.
-3. **Transparency** — the generated SQL and guardrail verdict are returned on
-   every response, so the answer is never a black box.
+   keywords, a blanket ban on `pg_*`, a table/view **allow-list** (fail-closed),
+   no `SELECT … INTO`, SQL comments stripped before checks, and a `LIMIT` injected
+   if missing.
+2. **Database enforcement** — a dedicated **read-only role** (`factory_ro`) inside a
+   `READ ONLY` transaction with a statement timeout. Even SQL that somehow slipped
+   the app layer cannot write or hang the box.
+3. **Abuse limits** — per-IP rate limiting (correct behind nginx via
+   `X-Forwarded-For`) and request size caps on the public endpoint.
+4. **Transparency** — every response returns the exact SQL and the guardrail
+   verdict. If the DB rejects a query, the model gets one self-correction round.
 
-The guardrail layer is covered by attack-case checks (statement chaining,
-`DELETE`/`DROP`, `pg_*` admin functions, `SELECT INTO`, `COPY` exfiltration,
-`pg_sleep` DoS, and substring traps like `created_at` that must *not* trip the
-write-keyword filter).
+The guardrails ship with a test suite covering real attacks — statement chaining,
+`DELETE`/`DROP`, `pg_read_file`, `pg_user`, `information_schema`, `COPY`
+exfiltration, comment obfuscation, and substring traps (`created_at` must *not*
+trip the write-keyword filter). Writing those tests is what caught a real
+`pg_read_file` bypass during development.
 
 ## Architecture
 
 ```
-question ─▶ schema grounding ─▶ LLM generates SQL ─▶ guardrails ─▶ read-only exec ─▶ result + SQL
-           (star schema +        (Anthropic API,      (allow-list,   (factory_ro role,
-            few-shot examples)     Ollama-swappable)    SELECT-only)   RO txn + timeout)
+                         ┌─────────────── browser (visitor's key, sessionStorage) ───────────────┐
+question ─▶ schema ctx ─▶│  generate SQL  ──key──▶  Claude / OpenAI / Gemini  ──▶  SQL text       │
+   ▲        (from API)   └──────────────────────────────────┬─────────────────────────────────────┘
+   │                                                         ▼  POST { question, sql }
+   │                          ┌──────────────────── backend (VPS, no LLM key) ─────────────────────┐
+   └── answer + SQL ◀─────────│  guardrails ──▶ read-only execute (factory_ro, RO txn, timeout)     │
+                              └────────────────────────────────────────────────────────────────────┘
 ```
 
-| Layer    | Stack                                   | Hosting          |
-|----------|-----------------------------------------|------------------|
-| Frontend | Next.js (static export), Recharts       | Cloudflare Pages |
-| Backend  | FastAPI, asyncpg, httpx                 | VPS + nginx + TLS |
-| Database | PostgreSQL (shared with the dashboard)  | VPS, read-only role |
-| LLM      | Anthropic API (default) or local Ollama | swappable via env |
+| Layer    | Stack                                    | Hosting             |
+|----------|------------------------------------------|---------------------|
+| Frontend | Next.js (static export), Recharts        | Cloudflare Pages    |
+| Backend  | FastAPI, asyncpg                         | VPS + nginx + TLS   |
+| Database | PostgreSQL (shared with the dashboard)   | VPS, read-only role |
+| LLM      | Claude / OpenAI / Gemini — visitor's key | in the browser      |
 
 ## Repository layout
 
@@ -62,28 +79,33 @@ question ─▶ schema grounding ─▶ LLM generates SQL ─▶ guardrails ─�
 backend/
   app/
     agent/
-      schema_context.py   # star-schema prompt + few-shot examples (the grounding)
-      generate.py         # NL -> SQL; Anthropic default, Ollama-swappable
-      guardrails.py       # read-only validation (the security-critical layer)
+      schema_context.py   # star-schema prompt + few-shot examples (served to the browser)
+      guardrails.py       # read-only SQL validation (the security-critical layer)
       runner.py           # read-only execution + viz hint
-    routers/ask.py        # /api/ask — generate -> guardrail -> execute
+    routers/ask.py        # /samples, /context, /run  (no LLM, no key)
+    ratelimit.py          # per-IP fixed-window limiter (X-Forwarded-For aware)
     config.py  db.py  main.py
+  tests/                  # 55 tests: guardrails, ratelimit, viz, API flow
 frontend/
-  app/page.tsx            # ask UI: question, live SQL, chart/KPI/table result
+  lib/keyStore.ts         # session-only BYOK storage
+  lib/providers.ts        # Claude / OpenAI / Gemini abstraction (client-side generation)
   lib/api.ts
+  components/KeyPanel.tsx  # provider + key entry
+  app/page.tsx            # ask UI: live SQL, chart/KPI/table, self-correct badge
 deploy/
-  RUNBOOK.md              # role creation, systemd, nginx, Cloudflare Pages
-  analyst-api.service  nginx.conf
+  RUNBOOK.md  analyst-api.service  nginx.conf
+.github/workflows/ci.yml  # backend lint+tests, frontend build
 ```
 
 ## Run locally
 
-**Backend** (needs the dashboard's Postgres reachable, and a read-only role):
+**Backend** (needs the dashboard's Postgres reachable + a read-only role; no LLM key):
 ```bash
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # set DATABASE_URL (factory_ro) and ANTHROPIC_API_KEY
-.venv/bin/uvicorn app.main:app --reload --port 8010
+python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # ".venv/bin/pip" on macOS/Linux
+cp .env.example .env   # set DATABASE_URL to the factory_ro role
+.venv/Scripts/uvicorn app.main:app --reload --port 8010
+pytest && ruff check app tests
 ```
 
 **Frontend:**
@@ -92,11 +114,16 @@ cd frontend
 npm install
 NEXT_PUBLIC_API_BASE=http://localhost:8010 npm run dev   # http://localhost:3010
 ```
+Open the app, pick a provider, paste your own API key, and ask a question.
 
 Deployment (read-only role, systemd, nginx + TLS, Cloudflare Pages) is in
 [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md).
 
-## LLM provider
+## What to say about it in an interview
 
-Defaults to the Anthropic API. To run fully local, set `AGENT_PROVIDER=ollama`
-with `OLLAMA_BASE` / `OLLAMA_MODEL` (e.g. a `sqlcoder` model) — no code change.
+- *Trust boundary:* "The backend never holds anyone's key and safely executes even
+  untrusted SQL, because the allow-list guardrails plus a read-only role make the
+  data store fail-safe."
+- *Provider abstraction:* one interface over three LLMs' differing request/response
+  shapes, swappable at runtime.
+- *Tested security:* the guardrail allow-list is covered by attack-case tests in CI.

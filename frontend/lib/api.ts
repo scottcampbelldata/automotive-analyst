@@ -1,6 +1,9 @@
-// API client for the Automotive Analyst backend (on the VPS).
+// Client for the Automotive Analyst backend (on the VPS). The backend never sees
+// an API key: it only serves the schema context and validates + runs SQL.
 // Set NEXT_PUBLIC_API_BASE in the Cloudflare Pages project, e.g.
 //   https://analyst-api.scottcampbell.io
+import type { SchemaContext } from "./providers";
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8010";
 
 async function get<T>(path: string): Promise<T> {
@@ -16,10 +19,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
     cache: "no-store",
   });
+  if (res.status === 429)
+    throw new Error("You're sending requests too quickly — give it a few seconds.");
   return res.json() as Promise<T>;
 }
 
-export interface AskResponse {
+export interface RunResponse {
   ok: boolean;
   stage?: string;
   error?: string;
@@ -33,6 +38,8 @@ export interface AskResponse {
 }
 
 export const api = {
-  askSamples: () => get<string[]>("/api/ask/samples"),
-  ask: (question: string) => post<AskResponse>("/api/ask", { question }),
+  samples: () => get<string[]>("/api/ask/samples"),
+  context: () => get<SchemaContext>("/api/ask/context"),
+  run: (question: string, sql: string) =>
+    post<RunResponse>("/api/ask/run", { question, sql }),
 };
