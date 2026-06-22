@@ -8,8 +8,7 @@ guardrails, runs it, and returns the answer **with the query shown**.
 It reads the same warehouse that powers the
 [factory dashboard](https://factory.scottcampbell.io), read-only.
 
-<!-- After pushing, set OWNER to your GitHub user/org for the badge to render. -->
-![CI](https://github.com/OWNER/automotive-analyst/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/scottcampbelldata/automotive-analyst/actions/workflows/ci.yml/badge.svg)
 
 **Live:** https://analyst.scottcampbell.io  ·  **API:** https://analyst-api.scottcampbell.io
 
