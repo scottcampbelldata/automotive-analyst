@@ -1,5 +1,6 @@
 -r requirements.txt
-pytest==8.3.4
-pytest-asyncio==0.25.2
+# Pinned to the versions developed + verified against, so CI and local agree.
+pytest==9.1.1
+pytest-asyncio==1.4.0
 httpx==0.28.1          # used by starlette's TestClient
-ruff==0.9.2
+ruff==0.15.18
