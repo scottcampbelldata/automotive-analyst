@@ -9,6 +9,14 @@ import type { Creds, Provider } from "./keyStore";
 export interface SchemaContext {
   system: string;
   examples: { question: string; sql: string }[];
+  unanswerable_examples?: { question: string; reason: string }[];
+}
+
+export interface QueryPlan {
+  answerable: boolean;
+  reason: string;
+  sql: string | null;
+  chart: "auto" | "bar" | "line" | "scalar" | "table";
 }
 
 interface Turn {
@@ -23,6 +31,41 @@ function buildTurns(ctx: SchemaContext, question: string): Turn[] {
     turns.push({ role: "assistant", content: ex.sql });
   }
   turns.push({ role: "user", content: question });
+  return turns;
+}
+
+function buildPlannerTurns(ctx: SchemaContext, question: string): Turn[] {
+  const turns: Turn[] = [];
+  for (const ex of ctx.examples) {
+    turns.push({ role: "user", content: `Plan this warehouse question:\n${ex.question}` });
+    turns.push({
+      role: "assistant",
+      content: JSON.stringify({
+        answerable: true,
+        reason: "Answerable from the warehouse schema.",
+        sql: ex.sql,
+        chart: "auto",
+      }),
+    });
+  }
+  for (const ex of ctx.unanswerable_examples ?? []) {
+    turns.push({ role: "user", content: `Plan this warehouse question:\n${ex.question}` });
+    turns.push({
+      role: "assistant",
+      content: JSON.stringify({
+        answerable: false,
+        reason: ex.reason,
+        sql: null,
+        chart: "table",
+      }),
+    });
+  }
+  turns.push({
+    role: "user",
+    content:
+      `Plan this warehouse question:\n${question}\n\n` +
+      'Return JSON only: {"answerable": boolean, "reason": string, "sql": string|null, "chart": "auto"|"bar"|"line"|"scalar"|"table"}.',
+  });
   return turns;
 }
 
@@ -49,6 +92,49 @@ function stripFences(s: string): string {
     .replace(/^```(?:sql)?/i, "")
     .replace(/```$/, "")
     .trim();
+}
+
+function extractJsonObject(raw: string): string {
+  const trimmed = stripFences(raw);
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("The model did not return a JSON object.");
+  }
+  return trimmed.slice(start, end + 1);
+}
+
+function parseQueryPlan(raw: string): QueryPlan {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(extractJsonObject(raw));
+  } catch {
+    throw new Error("The model returned invalid JSON while planning the query.");
+  }
+  const plan = parsed as Partial<QueryPlan>;
+  if (typeof plan.answerable !== "boolean") {
+    throw new Error("The model plan is missing answerable.");
+  }
+  const chart = ["auto", "bar", "line", "scalar", "table"].includes(String(plan.chart))
+    ? (plan.chart as QueryPlan["chart"])
+    : "auto";
+  if (!plan.answerable) {
+    return {
+      answerable: false,
+      reason: String(plan.reason || "The warehouse does not contain enough data for that question."),
+      sql: null,
+      chart,
+    };
+  }
+  if (typeof plan.sql !== "string" || !plan.sql.trim()) {
+    throw new Error("The model marked the question answerable but did not return SQL.");
+  }
+  return {
+    answerable: true,
+    reason: String(plan.reason || ""),
+    sql: stripFences(plan.sql),
+    chart,
+  };
 }
 
 async function providerError(res: Response, name: string): Promise<string> {
@@ -144,8 +230,20 @@ export async function generateSQL(
   ctx: SchemaContext,
   question: string,
 ): Promise<string> {
-  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildTurns(ctx, question));
-  return stripFences(raw);
+  const plan = await planQuery(creds, ctx, question);
+  if (!plan.answerable || !plan.sql) {
+    throw new Error(plan.reason || "The warehouse does not contain enough data for that question.");
+  }
+  return plan.sql;
+}
+
+export async function planQuery(
+  creds: Creds,
+  ctx: SchemaContext,
+  question: string,
+): Promise<QueryPlan> {
+  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question));
+  return parseQueryPlan(raw);
 }
 
 export async function repairSQL(
@@ -160,5 +258,31 @@ export async function repairSQL(
     ctx.system,
     buildRepairTurns(ctx, question, badSql, error),
   );
+  return stripFences(raw);
+}
+
+export async function summarizeResult(
+  creds: Creds,
+  ctx: SchemaContext,
+  question: string,
+  sql: string,
+  columns: string[],
+  rows: Record<string, string | number | null>[],
+): Promise<string> {
+  const previewRows = rows.slice(0, 25);
+  const turns: Turn[] = [
+    {
+      role: "user",
+      content:
+        "Answer this warehouse question using only the SQL result below.\n" +
+        `Question: ${question}\n` +
+        `SQL: ${sql}\n` +
+        `Columns: ${JSON.stringify(columns)}\n` +
+        `Rows: ${JSON.stringify(previewRows)}\n` +
+        `Total rows returned: ${rows.length}\n\n` +
+        "Write 1-3 concise sentences. If the rows are empty, say the query returned no matching records.",
+    },
+  ];
+  const raw = await DISPATCH[creds.provider](creds, ctx.system, turns);
   return stripFences(raw);
 }
