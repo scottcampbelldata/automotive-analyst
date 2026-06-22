@@ -1,10 +1,25 @@
 // Multi-provider SQL generation, all client-side. The visitor's key is sent
 // directly from the browser to their chosen provider (Anthropic / OpenAI /
 // Gemini) and never to this site's backend. Each provider speaks a slightly
-// different request/response shape; this module hides that behind generateSQL /
-// repairSQL, which return raw SQL text for the backend guardrails to validate.
+// different request/response shape; this module hides that behind planQuery /
+// repairSQL / summarizeResult.
+//
+// The model does ALL the SQL work: the user only ever asks a plain-English
+// question. The model replies with either one PostgreSQL SELECT (the normal
+// case) or a `NOT_ANSWERABLE: <reason>` sentinel when the question needs data
+// the warehouse doesn't have. We never ask the user for SQL, and we never make
+// the model wrap its SQL in JSON — emitting SQL is what these models are
+// reliable at; wrapping it in an escaped JSON envelope is what kept truncating
+// and breaking on longer queries.
 
 import type { Creds, Provider } from "./keyStore";
+
+// Headroom for one SELECT. The pill questions are short, but arbitrary
+// questions produce CTEs and multi-step queries that overran the old 600-token
+// cap and came back truncated.
+const MAX_OUTPUT_TOKENS = 2048;
+
+const NOT_ANSWERABLE = "NOT_ANSWERABLE:";
 
 export interface SchemaContext {
   system: string;
@@ -16,16 +31,11 @@ export interface QueryPlan {
   answerable: boolean;
   reason: string;
   sql: string | null;
-  chart: "auto" | "bar" | "line" | "scalar" | "table";
 }
 
 interface Turn {
   role: "user" | "assistant";
   content: string;
-}
-
-interface ProviderCallOptions {
-  responseMimeType?: "application/json";
 }
 
 function buildTurns(ctx: SchemaContext, question: string): Turn[] {
@@ -38,38 +48,19 @@ function buildTurns(ctx: SchemaContext, question: string): Turn[] {
   return turns;
 }
 
+// Few-shot that teaches both outcomes: answerable questions -> one SELECT,
+// out-of-schema questions -> the NOT_ANSWERABLE sentinel. No JSON envelope.
 function buildPlannerTurns(ctx: SchemaContext, question: string): Turn[] {
   const turns: Turn[] = [];
   for (const ex of ctx.examples) {
-    turns.push({ role: "user", content: `Plan this warehouse question:\n${ex.question}` });
-    turns.push({
-      role: "assistant",
-      content: JSON.stringify({
-        answerable: true,
-        reason: "Answerable from the warehouse schema.",
-        sql: ex.sql,
-        chart: "auto",
-      }),
-    });
+    turns.push({ role: "user", content: ex.question });
+    turns.push({ role: "assistant", content: ex.sql });
   }
   for (const ex of ctx.unanswerable_examples ?? []) {
-    turns.push({ role: "user", content: `Plan this warehouse question:\n${ex.question}` });
-    turns.push({
-      role: "assistant",
-      content: JSON.stringify({
-        answerable: false,
-        reason: ex.reason,
-        sql: null,
-        chart: "table",
-      }),
-    });
+    turns.push({ role: "user", content: ex.question });
+    turns.push({ role: "assistant", content: `${NOT_ANSWERABLE} ${ex.reason}` });
   }
-  turns.push({
-    role: "user",
-    content:
-      `Plan this warehouse question:\n${question}\n\n` +
-      'Return JSON only: {"answerable": boolean, "reason": string, "sql": string|null, "chart": "auto"|"bar"|"line"|"scalar"|"table"}.',
-  });
+  turns.push({ role: "user", content: question });
   return turns;
 }
 
@@ -81,12 +72,7 @@ function exactExamplePlan(ctx: SchemaContext, question: string): QueryPlan | nul
   const normalized = normalizeQuestion(question);
   const example = ctx.examples.find((ex) => normalizeQuestion(ex.question) === normalized);
   if (!example) return null;
-  return {
-    answerable: true,
-    reason: "Answerable from the warehouse schema.",
-    sql: example.sql,
-    chart: "auto",
-  };
+  return { answerable: true, reason: "Answerable from the warehouse schema.", sql: example.sql };
 }
 
 function buildRepairTurns(
@@ -114,49 +100,6 @@ function stripFences(s: string): string {
     .trim();
 }
 
-function extractJsonObject(raw: string): string {
-  const trimmed = stripFences(raw);
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("The model did not return a JSON object.");
-  }
-  return trimmed.slice(start, end + 1);
-}
-
-function parseQueryPlan(raw: string): QueryPlan {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(extractJsonObject(raw));
-  } catch {
-    throw new Error("The model returned invalid JSON while planning the query.");
-  }
-  const plan = parsed as Partial<QueryPlan>;
-  if (typeof plan.answerable !== "boolean") {
-    throw new Error("The model plan is missing answerable.");
-  }
-  const chart = ["auto", "bar", "line", "scalar", "table"].includes(String(plan.chart))
-    ? (plan.chart as QueryPlan["chart"])
-    : "auto";
-  if (!plan.answerable) {
-    return {
-      answerable: false,
-      reason: String(plan.reason || "The warehouse does not contain enough data for that question."),
-      sql: null,
-      chart,
-    };
-  }
-  if (typeof plan.sql !== "string" || !plan.sql.trim()) {
-    throw new Error("The model marked the question answerable but did not return SQL.");
-  }
-  return {
-    answerable: true,
-    reason: String(plan.reason || ""),
-    sql: stripFences(plan.sql),
-    chart,
-  };
-}
-
 function extractSql(raw: string): string | null {
   const cleaned = stripFences(raw);
   const match = cleaned.match(/\b(with|select)\b[\s\S]*/i);
@@ -164,12 +107,18 @@ function extractSql(raw: string): string | null {
   return match[0].trim();
 }
 
-function sqlPlan(sql: string): QueryPlan {
+// Turn whatever the model said into a plan. SQL wins: if the response contains
+// a SELECT, the model did its job. Otherwise, surface the NOT_ANSWERABLE reason
+// (or a default) so the UI can say "not enough data" — never an internal error.
+function interpretPlan(raw: string): QueryPlan {
+  const sql = extractSql(raw);
+  if (sql) return { answerable: true, reason: "", sql };
+  const cleaned = stripFences(raw);
+  const reason = cleaned.match(/NOT_ANSWERABLE\s*:?\s*([\s\S]*)/i)?.[1]?.trim();
   return {
-    answerable: true,
-    reason: "Answerable from the warehouse schema.",
-    sql,
-    chart: "auto",
+    answerable: false,
+    reason: reason || "The warehouse does not contain enough data for that question.",
+    sql: null,
   };
 }
 
@@ -188,12 +137,7 @@ async function providerError(res: Response, name: string): Promise<string> {
   return `${name} error ${res.status}: ${detail || res.statusText}`;
 }
 
-async function callAnthropic(
-  creds: Creds,
-  system: string,
-  turns: Turn[],
-  _options: ProviderCallOptions = {},
-): Promise<string> {
+async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -203,7 +147,12 @@ async function callAnthropic(
       // Required to allow calling the Messages API directly from a browser.
       "anthropic-dangerous-direct-browser-access": "true",
     },
-    body: JSON.stringify({ model: creds.model, max_tokens: 600, system, messages: turns }),
+    body: JSON.stringify({
+      model: creds.model,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      system,
+      messages: turns,
+    }),
   });
   if (!res.ok) throw new Error(await providerError(res, "Anthropic"));
   const data = await res.json();
@@ -213,12 +162,7 @@ async function callAnthropic(
     .join("");
 }
 
-async function callOpenAI(
-  creds: Creds,
-  system: string,
-  turns: Turn[],
-  _options: ProviderCallOptions = {},
-): Promise<string> {
+async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${creds.key}` },
@@ -226,7 +170,7 @@ async function callOpenAI(
       model: creds.model,
       instructions: system,
       input: turns,
-      max_output_tokens: 600,
+      max_output_tokens: MAX_OUTPUT_TOKENS,
       reasoning: { effort: "low" },
       text: { verbosity: "low" },
     }),
@@ -242,12 +186,7 @@ async function callOpenAI(
     .join("");
 }
 
-async function callGemini(
-  creds: Creds,
-  system: string,
-  turns: Turn[],
-  options: ProviderCallOptions = {},
-): Promise<string> {
+async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<string> {
   const contents = turns.map((t) => ({
     role: t.role === "assistant" ? "model" : "user",
     parts: [{ text: t.content }],
@@ -261,11 +200,7 @@ async function callGemini(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents,
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 600,
-        ...(options.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
-      },
+      generationConfig: { temperature: 0, maxOutputTokens: MAX_OUTPUT_TOKENS },
     }),
   });
   if (!res.ok) throw new Error(await providerError(res, "Gemini"));
@@ -274,26 +209,11 @@ async function callGemini(
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
-const DISPATCH: Record<
-  Provider,
-  (c: Creds, s: string, t: Turn[], o?: ProviderCallOptions) => Promise<string>
-> = {
+const DISPATCH: Record<Provider, (c: Creds, s: string, t: Turn[]) => Promise<string>> = {
   anthropic: callAnthropic,
   openai: callOpenAI,
   gemini: callGemini,
 };
-
-export async function generateSQL(
-  creds: Creds,
-  ctx: SchemaContext,
-  question: string,
-): Promise<string> {
-  const plan = await planQuery(creds, ctx, question);
-  if (!plan.answerable || !plan.sql) {
-    throw new Error(plan.reason || "The warehouse does not contain enough data for that question.");
-  }
-  return plan.sql;
-}
 
 export async function planQuery(
   creds: Creds,
@@ -302,24 +222,8 @@ export async function planQuery(
 ): Promise<QueryPlan> {
   const exact = exactExamplePlan(ctx, question);
   if (exact) return exact;
-  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question), {
-    responseMimeType: "application/json",
-  });
-  try {
-    return parseQueryPlan(raw);
-  } catch {
-    const plannedSql = extractSql(raw);
-    if (plannedSql) return sqlPlan(plannedSql);
-  }
-  const rawSql = await DISPATCH[creds.provider](creds, ctx.system, buildTurns(ctx, question));
-  const fallbackSql = extractSql(rawSql);
-  if (fallbackSql) return sqlPlan(fallbackSql);
-  return {
-    answerable: false,
-    reason: "The model did not produce SQL from the warehouse schema for that question.",
-    sql: null,
-    chart: "table",
-  };
+  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question));
+  return interpretPlan(raw);
 }
 
 export async function repairSQL(
