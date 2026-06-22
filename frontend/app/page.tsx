@@ -1,128 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
-import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-} from "recharts";
 import { api, RunResponse } from "@/lib/api";
 import { planQuery, repairSQL, summarizeResult, QueryPlan, SchemaContext } from "@/lib/providers";
 import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
 import { KeyPanel } from "@/components/KeyPanel";
+import { ResultChart } from "@/components/ResultChart";
 
 const DASHBOARD_URL = "https://factory.scottcampbell.io";
-const AXIS = { fill: "#8896b4", fontSize: 12 };
-const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// SQL date_trunc returns full ISO timestamps (2024-06-01T00:00:00) that are
-// ugly on a chart axis. Render those as readable dates; leave everything else
-// (numbers, station names, fault codes) exactly as-is.
-function formatLabel(v: unknown): string {
-  if (typeof v !== "string") return String(v);
-  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
-  if (!m) return v;
-  const [, y, mo, d, hh, mm] = m;
-  const month = MONTHS[Number(mo) - 1] ?? mo;
-  const midnight = !hh || (hh === "00" && mm === "00");
-  if (d === "01" && midnight) return `${month} ${y}`; // month grain
-  if (midnight) return `${month} ${Number(d)}, ${y}`; // day grain
-  return `${month} ${Number(d)}, ${y} ${hh}:${mm}`; // with time
-}
-
-// "preventive_downtime_min" -> "Preventive Downtime Min"
-function humanizeKey(s: unknown): string {
-  return String(s)
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-// Numbers get thousands separators (5259.1 -> "5,259.1"); non-numbers pass
-// through. Used for measure values only (tooltip, Y axis, KPIs) — never the
-// X axis, where a year like 2024 must not become "2,024".
-function formatValue(v: unknown): string {
-  return typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : String(v);
-}
 
 type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
-
-function ResultChart({ res }: { res: RunResponse }) {
-  const cols = res.columns ?? [];
-  const rows = res.rows ?? [];
-
-  if (res.viz === "bar" && cols.length >= 2) {
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={rows} margin={{ top: 8, right: 8, left: -10, bottom: 40 }}>
-          <CartesianGrid stroke="#1f2a44" vertical={false} />
-          <XAxis
-            dataKey={cols[0]}
-            tick={AXIS}
-            angle={-20}
-            textAnchor="end"
-            interval={0}
-            tickFormatter={formatLabel}
-          />
-          <YAxis tick={AXIS} tickFormatter={formatValue} />
-          <Tooltip
-            contentStyle={TIP}
-            labelFormatter={formatLabel}
-            formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
-          />
-          <Bar dataKey={cols[1]} fill="#e0653f" radius={[5, 5, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  }
-  if (res.viz === "line" && cols.length >= 2) {
-    const yKey = cols.find((c, i) => i > 0 && typeof rows[0][c] === "number") ?? cols[1];
-    return (
-      <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={rows} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
-          <CartesianGrid stroke="#1f2a44" vertical={false} />
-          <XAxis dataKey={cols[0]} tick={AXIS} tickFormatter={formatLabel} />
-          <YAxis tick={AXIS} tickFormatter={formatValue} />
-          <Tooltip
-            contentStyle={TIP}
-            labelFormatter={formatLabel}
-            formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
-          />
-          <Line dataKey={yKey} stroke="#e6ecf7" strokeWidth={2} dot={{ r: 2 }} />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  }
-  if (res.viz === "scalar") {
-    return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {cols.map((c) => (
-          <div key={c} className="kpi">
-            <div className="kpi-value">{formatValue(rows[0][c])}</div>
-            <div className="kpi-label">{humanizeKey(c)}</div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <div className="overflow-auto max-h-[420px]">
-      <table className="data w-full">
-        <thead className="sticky top-0 bg-panel">
-          <tr className="text-left">
-            {cols.map((c) => <th key={c} className="py-1 pr-4">{c}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {cols.map((c) => <td key={c} className="py-1.5 pr-4">{formatLabel(r[c])}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: "",
