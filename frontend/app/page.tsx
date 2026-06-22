@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import { api, RunResponse } from "@/lib/api";
-import { generateSQL, repairSQL, SchemaContext } from "@/lib/providers";
+import { planQuery, repairSQL, summarizeResult, QueryPlan, SchemaContext } from "@/lib/providers";
 import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
 import { KeyPanel } from "@/components/KeyPanel";
 
@@ -13,7 +13,7 @@ const DASHBOARD_URL = "https://factory.scottcampbell.io";
 const AXIS = { fill: "#8896b4", fontSize: 12 };
 const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
 
-type Phase = "idle" | "generating" | "running" | "repairing";
+type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
 
 function ResultChart({ res }: { res: RunResponse }) {
   const cols = res.columns ?? [];
@@ -80,9 +80,10 @@ function ResultChart({ res }: { res: RunResponse }) {
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: "",
-  generating: "Writing SQL with your model…",
-  running: "Validating and running read-only…",
-  repairing: "Query failed — asking the model to fix it…",
+  planning: "Checking the warehouse schema and writing SQL...",
+  running: "Validating and running read-only...",
+  repairing: "Query failed - asking the model to fix it...",
+  summarizing: "Writing the answer from the result rows...",
 };
 
 export default function Home() {
@@ -94,6 +95,9 @@ export default function Home() {
   const [q, setQ] = useState("");
   const [res, setRes] = useState<RunResponse | null>(null);
   const [genSql, setGenSql] = useState<string | null>(null);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [notEnoughData, setNotEnoughData] = useState<string | null>(null);
+  const [plan, setPlan] = useState<QueryPlan | null>(null);
   const [repaired, setRepaired] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [err, setErr] = useState<string | null>(null);
@@ -128,11 +132,22 @@ export default function Home() {
     setRes(null);
     setErr(null);
     setGenSql(null);
+    setAnswer(null);
+    setNotEnoughData(null);
+    setPlan(null);
     setRepaired(false);
 
     try {
-      setPhase("generating");
-      const sql = await generateSQL(creds, context, question);
+      setPhase("planning");
+      const nextPlan = await planQuery(creds, context, question);
+      setPlan(nextPlan);
+      if (!nextPlan.answerable || !nextPlan.sql) {
+        setNotEnoughData(
+          nextPlan.reason || "The warehouse does not contain enough data for that question.",
+        );
+        return;
+      }
+      const sql = nextPlan.sql;
       setGenSql(sql);
 
       setPhase("running");
@@ -153,6 +168,14 @@ export default function Home() {
 
       if (r.sql) setGenSql(r.sql); // the exact SQL the server validated/ran
       setRes(r);
+      if (r.ok && r.columns && r.rows && r.sql) {
+        setPhase("summarizing");
+        try {
+          setAnswer(await summarizeResult(creds, context, question, r.sql, r.columns, r.rows));
+        } catch {
+          setAnswer(null);
+        }
+      }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -249,6 +272,13 @@ export default function Home() {
         </div>
       )}
 
+      {notEnoughData && (
+        <div className="card">
+          <div className="text-accent font-medium mb-1">Not enough data in this warehouse</div>
+          <p className="text-sm text-mute">{notEnoughData}</p>
+        </div>
+      )}
+
       {(res || genSql) && (
         <div className="card space-y-4">
           {res &&
@@ -267,6 +297,7 @@ export default function Home() {
                     </span>
                   </span>
                 </div>
+                {answer && <p className="text-sm text-[#dce6f7] leading-relaxed">{answer}</p>}
                 <ResultChart res={res} />
                 <div className="text-xs text-faint">{res.row_count} row(s)</div>
               </>
@@ -286,6 +317,9 @@ export default function Home() {
               <div className="text-xs text-faint uppercase tracking-wider mb-1.5">
                 Generated SQL{providerLabel ? ` · ${providerLabel}` : ""}
               </div>
+              {plan?.reason && res?.ok && (
+                <div className="text-xs text-faint mb-2">{plan.reason}</div>
+              )}
               <pre className="bg-[var(--panel-2)] border border-edge rounded-lg p-3 text-xs text-[#cdd7ea] overflow-auto whitespace-pre-wrap">
                 {genSql}
               </pre>
