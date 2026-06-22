@@ -157,6 +157,30 @@ function parseQueryPlan(raw: string): QueryPlan {
   };
 }
 
+function extractSql(raw: string): string | null {
+  const cleaned = stripFences(raw);
+  const match = cleaned.match(/\b(with|select)\b[\s\S]*/i);
+  if (!match) return null;
+  return match[0].trim();
+}
+
+function parseQueryPlanOrSql(raw: string): QueryPlan {
+  try {
+    return parseQueryPlan(raw);
+  } catch {
+    const sql = extractSql(raw);
+    if (!sql) {
+      throw new Error("The model did not return usable SQL while planning the query.");
+    }
+    return {
+      answerable: true,
+      reason: "Answerable from the warehouse schema.",
+      sql,
+      chart: "auto",
+    };
+  }
+}
+
 async function providerError(res: Response, name: string): Promise<string> {
   let detail = "";
   try {
@@ -289,7 +313,7 @@ export async function planQuery(
   const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question), {
     responseMimeType: "application/json",
   });
-  return parseQueryPlan(raw);
+  return parseQueryPlanOrSql(raw);
 }
 
 export async function repairSQL(
