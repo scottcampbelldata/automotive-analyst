@@ -1,10 +1,15 @@
 "use client";
-// Shape-aware result rendering. The backend hints a viz type, but the right
-// chart really depends on the columns/rows: a single-row metric wants KPI
-// cards, a category+measure wants bars, a time series wants a line, a result
-// with a low-cardinality category dimension wants one series per value (with a
-// legend), and two measures on very different scales want a dual Y-axis. When a
-// chart would distort or hide the data, we show a clean table instead.
+// Shape-aware result rendering. The right chart depends on the columns/rows:
+//   - one row of metrics            -> KPI cards
+//   - category + one measure        -> bars
+//   - time + one measure            -> line
+//   - axis + a series dimension     -> one line/bar per series value (legend)
+//   - axis + two off-scale measures -> dual Y-axis
+//   - series dimension + 2+ measures-> small multiples (one mini dual-axis
+//                                       chart per series value, shared scales)
+//   - anything else                 -> a clean, formatted table
+// Every chart shares one primitive (MeasureChart) so axes, tooltips, colors,
+// and formatting stay identical across cases.
 import {
   ResponsiveContainer,
   BarChart,
@@ -96,8 +101,13 @@ function distinctValues(rows: Row[], c: string): string[] {
   return out;
 }
 
-// Collapse long-format rows (one row per axis×series) into wide format (one row
-// per axis, a column per series value) so recharts can draw one line/bar each.
+function byDate(axisCol: string) {
+  return (a: Row, b: Row) =>
+    new Date(String(a[axisCol])).getTime() - new Date(String(b[axisCol])).getTime();
+}
+
+// Collapse long-format rows into wide format: one row per axis value, a column
+// per series value, so recharts can draw one line/bar each.
 function pivot(rows: Row[], axisCol: string, seriesCol: string, measure: string): Row[] {
   const map = new Map<string, Row>();
   const order: string[] = [];
@@ -112,9 +122,137 @@ function pivot(rows: Row[], axisCol: string, seriesCol: string, measure: string)
   return order.map((k) => map.get(k)!);
 }
 
-function byDate(axisCol: string) {
-  return (a: Row, b: Row) =>
-    new Date(String(a[axisCol])).getTime() - new Date(String(b[axisCol])).getTime();
+interface Scale {
+  rightKey?: string;
+  leftDomain: [number, number];
+  rightDomain?: [number, number];
+}
+
+// Decide axis assignment for a set of measures. Two measures whose magnitudes
+// differ by >=20x get split onto a dual axis; the right axis zooms to its own
+// data range (so e.g. yield % isn't crushed against a 0 baseline).
+function measureScale(rows: Row[], measures: string[]): Scale {
+  const maxes = measures.map((m) => Math.max(...rows.map((r) => Number(r[m]) || 0), 0));
+  const hi = Math.max(...maxes, 0);
+  const lo = Math.min(...maxes.filter((x) => x > 0), hi);
+  const dual = measures.length === 2 && hi / Math.max(lo, 1) >= 20;
+  const rightKey = dual ? measures[1] : undefined;
+  const leftKeys = measures.filter((m) => m !== rightKey);
+  const leftMax = Math.max(...rows.flatMap((r) => leftKeys.map((m) => Number(r[m]) || 0)), 0);
+  const leftDomain: [number, number] = [0, leftMax || 1];
+  let rightDomain: [number, number] | undefined;
+  if (rightKey) {
+    const vals = rows
+      .map((r) => Number(r[rightKey]))
+      .filter((v) => !Number.isNaN(v));
+    if (vals.length) rightDomain = [Math.min(...vals), Math.max(...vals)];
+  }
+  return { rightKey, leftDomain, rightDomain };
+}
+
+// The single chart primitive. `keys` are the dataKeys to draw (measure columns,
+// or pivoted series values). Time axes draw lines; categorical axes draw bars.
+function MeasureChart({
+  data,
+  axisCol,
+  isTime,
+  keys,
+  rightKey,
+  leftDomain,
+  rightDomain,
+  height,
+  showLegend,
+}: {
+  data: Row[];
+  axisCol: string;
+  isTime: boolean;
+  keys: string[];
+  rightKey?: string;
+  leftDomain?: [number, number];
+  rightDomain?: [number, number];
+  height: number;
+  showLegend: boolean;
+}) {
+  const hasRight = Boolean(rightKey);
+  const axes = (
+    <>
+      <CartesianGrid stroke={GRID} vertical={false} />
+      <XAxis
+        dataKey={axisCol}
+        tick={AXIS}
+        tickFormatter={formatLabel}
+        {...(isTime ? {} : { angle: -20, textAnchor: "end" as const, interval: 0 })}
+      />
+      <YAxis yAxisId="left" tick={AXIS} tickFormatter={formatValue} domain={leftDomain} />
+      {hasRight && (
+        <YAxis
+          yAxisId="right"
+          orientation="right"
+          tick={AXIS}
+          tickFormatter={formatValue}
+          domain={rightDomain}
+        />
+      )}
+      <Tooltip
+        contentStyle={TIP}
+        labelFormatter={formatLabel}
+        formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
+      />
+      {showLegend && <Legend formatter={humanizeKey} wrapperStyle={{ fontSize: 12 }} />}
+    </>
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      {isTime ? (
+        <LineChart data={data} margin={{ top: 8, right: hasRight ? 8 : 16, left: -6, bottom: 24 }}>
+          {axes}
+          {keys.map((k, i) => (
+            <Line
+              key={k}
+              yAxisId={k === rightKey ? "right" : "left"}
+              dataKey={k}
+              stroke={PALETTE[i % PALETTE.length]}
+              strokeWidth={2}
+              dot={{ r: 2 }}
+              connectNulls
+            />
+          ))}
+        </LineChart>
+      ) : (
+        <BarChart data={data} margin={{ top: 8, right: hasRight ? 8 : 16, left: -6, bottom: 44 }}>
+          {axes}
+          {keys.map((k, i) => (
+            <Bar
+              key={k}
+              yAxisId={k === rightKey ? "right" : "left"}
+              dataKey={k}
+              fill={PALETTE[i % PALETTE.length]}
+              radius={[4, 4, 0, 0]}
+            />
+          ))}
+        </BarChart>
+      )}
+    </ResponsiveContainer>
+  );
+}
+
+// One shared legend chip row, used above small multiples so each facet stays
+// uncluttered while colors map consistently across every panel.
+function LegendChips({ keys }: { keys: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3 text-xs text-mute">
+      {keys.map((k, i) => (
+        <span key={k} className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block w-3 h-3 rounded-sm"
+            style={{ background: PALETTE[i % PALETTE.length] }}
+          />
+          {humanizeKey(k)}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function Cards({ cols, row }: { cols: string[]; row: Row }) {
@@ -159,28 +297,6 @@ function Table({ cols, rows }: { cols: string[]; rows: Row[] }) {
   );
 }
 
-const commonAxes = (axisCol: string, isTime: boolean, rightAxis: boolean) => (
-  <>
-    <CartesianGrid stroke={GRID} vertical={false} />
-    <XAxis
-      dataKey={axisCol}
-      tick={AXIS}
-      tickFormatter={formatLabel}
-      {...(isTime ? {} : { angle: -20, textAnchor: "end" as const, interval: 0 })}
-    />
-    <YAxis yAxisId="left" tick={AXIS} tickFormatter={formatValue} />
-    {rightAxis && (
-      <YAxis yAxisId="right" orientation="right" tick={AXIS} tickFormatter={formatValue} />
-    )}
-    <Tooltip
-      contentStyle={TIP}
-      labelFormatter={formatLabel}
-      formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
-    />
-    <Legend formatter={humanizeKey} wrapperStyle={{ fontSize: 12 }} />
-  </>
-);
-
 export function ResultChart({ res }: { res: RunResponse }) {
   const cols = res.columns ?? [];
   const rows = res.rows ?? [];
@@ -190,24 +306,21 @@ export function ResultChart({ res }: { res: RunResponse }) {
   }
 
   // Single row of metrics → KPI cards.
-  if (rows.length === 1) {
-    return <Cards cols={cols} row={rows[0]} />;
-  }
+  if (rows.length === 1) return <Cards cols={cols} row={rows[0]} />;
 
   const numericCols = cols.filter((c) => isNumericCol(rows, c));
   const dateCols = cols.filter((c) => isDateCol(rows, c));
   const categoricalCols = cols.filter((c) => !numericCols.includes(c));
 
-  // Nothing to plot, or shape we can't chart honestly → table.
   if (numericCols.length === 0) return <Table cols={cols} rows={rows} />;
 
   const axisCol = dateCols[0] ?? categoricalCols[0] ?? cols[0];
   const isTime = dateCols.includes(axisCol);
+  const measures = numericCols;
 
-  // A low-cardinality category becomes a series split ONLY in true long format
-  // (more rows than distinct axis values, i.e. several rows per axis value). In
-  // wide format every extra category is a 1:1 label (e.g. fault_desc next to
-  // fault_code), not a dimension to split on.
+  // A low-cardinality category is a series split ONLY in true long format (more
+  // rows than distinct axis values). In wide format an extra category is a 1:1
+  // label (e.g. fault_desc beside fault_code), not a dimension to split on.
   const distinctAxis = distinctValues(rows, axisCol).length;
   const longFormat = rows.length > distinctAxis;
   const seriesCol = longFormat
@@ -215,99 +328,89 @@ export function ResultChart({ res }: { res: RunResponse }) {
         (c) =>
           c !== axisCol &&
           distinctValues(rows, c).length >= 2 &&
-          distinctValues(rows, c).length <= 8 &&
+          distinctValues(rows, c).length <= 12 &&
           distinctValues(rows, c).length < distinctAxis,
       )
     : undefined;
 
-  const measures = numericCols;
-  const height = 340;
+  const tooManyBars = !isTime && distinctAxis > 30;
 
-  // Case A — long format with a series dimension and one measure:
-  // pivot to one line/bar per series value.
-  if (seriesCol && measures.length === 1) {
+  // Case A — series dimension + one measure: one line/bar per series value.
+  if (seriesCol && measures.length === 1 && !tooManyBars) {
     const seriesKeys = distinctValues(rows, seriesCol);
     if (seriesKeys.length <= 8) {
       let data = pivot(rows, axisCol, seriesCol, measures[0]);
       if (isTime) data = [...data].sort(byDate(axisCol));
       return (
-        <ResponsiveContainer width="100%" height={height}>
-          {isTime ? (
-            <LineChart data={data} margin={{ top: 8, right: 16, left: -6, bottom: 32 }}>
-              {commonAxes(axisCol, isTime, false)}
-              {seriesKeys.map((k, i) => (
-                <Line
-                  key={k}
-                  yAxisId="left"
-                  dataKey={k}
-                  stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          ) : (
-            <BarChart data={data} margin={{ top: 8, right: 16, left: -6, bottom: 48 }}>
-              {commonAxes(axisCol, isTime, false)}
-              {seriesKeys.map((k, i) => (
-                <Bar key={k} yAxisId="left" dataKey={k} fill={PALETTE[i % PALETTE.length]} radius={[4, 4, 0, 0]} />
-              ))}
-            </BarChart>
-          )}
-        </ResponsiveContainer>
+        <MeasureChart
+          data={data}
+          axisCol={axisCol}
+          isTime={isTime}
+          keys={seriesKeys}
+          height={340}
+          showLegend
+        />
       );
     }
   }
 
-  // Case B — wide format, one or more measures, no series split.
-  // Each measure is its own line/bar; dual Y-axis when two measures sit on very
-  // different scales (e.g. downtime hours vs. yield %).
-  if (!seriesCol && measures.length >= 1) {
-    const maxes = measures.map((m) => Math.max(...rows.map((r) => Number(r[m]) || 0), 0));
-    const hi = Math.max(...maxes);
-    const lo = Math.min(...maxes.filter((x) => x > 0), hi);
-    const dual = measures.length === 2 && hi / Math.max(lo, 1) >= 20;
-    const tooManyBars = !isTime && distinctValues(rows, axisCol).length > 30;
-
-    if (!tooManyBars) {
+  // Case B — series dimension + 2+ measures: small multiples. One mini chart per
+  // series value, all sharing the same axes/scales for honest comparison.
+  if (seriesCol && measures.length >= 2 && !tooManyBars) {
+    const seriesKeys = distinctValues(rows, seriesCol);
+    if (seriesKeys.length <= 12) {
+      const scale = measureScale(rows, measures); // shared across every facet
       return (
-        <ResponsiveContainer width="100%" height={height}>
-          {isTime ? (
-            <LineChart data={rows} margin={{ top: 8, right: 16, left: -6, bottom: 32 }}>
-              {commonAxes(axisCol, isTime, dual)}
-              {measures.map((m, i) => (
-                <Line
-                  key={m}
-                  yAxisId={dual && i === 1 ? "right" : "left"}
-                  dataKey={m}
-                  stroke={PALETTE[i % PALETTE.length]}
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  connectNulls
-                />
-              ))}
-            </LineChart>
-          ) : (
-            <BarChart data={rows} margin={{ top: 8, right: 16, left: -6, bottom: 48 }}>
-              {commonAxes(axisCol, isTime, dual)}
-              {measures.map((m, i) => (
-                <Bar
-                  key={m}
-                  yAxisId={dual && i === 1 ? "right" : "left"}
-                  dataKey={m}
-                  fill={PALETTE[i % PALETTE.length]}
-                  radius={[4, 4, 0, 0]}
-                />
-              ))}
-            </BarChart>
-          )}
-        </ResponsiveContainer>
+        <div>
+          <LegendChips keys={measures} />
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {seriesKeys.map((k) => {
+              let data = rows.filter((r) => String(r[seriesCol]) === k);
+              if (isTime) data = [...data].sort(byDate(axisCol));
+              return (
+                <div key={k} className="border border-edge rounded-lg p-3">
+                  <div className="text-xs text-faint uppercase tracking-wider mb-2">
+                    {humanizeKey(seriesCol)}: {formatLabel(k)}
+                  </div>
+                  <MeasureChart
+                    data={data}
+                    axisCol={axisCol}
+                    isTime={isTime}
+                    keys={measures}
+                    rightKey={scale.rightKey}
+                    leftDomain={scale.leftDomain}
+                    rightDomain={scale.rightDomain}
+                    height={200}
+                    showLegend={false}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
       );
     }
   }
 
-  // Anything else (series dimension + multiple measures, very high cardinality,
-  // etc.) is clearer as a table than a misleading chart.
+  // Case C — wide format, one or more measures, no series split.
+  if (!seriesCol && measures.length >= 1 && !tooManyBars) {
+    const scale = measureScale(rows, measures);
+    const data = isTime ? [...rows].sort(byDate(axisCol)) : rows;
+    return (
+      <MeasureChart
+        data={data}
+        axisCol={axisCol}
+        isTime={isTime}
+        keys={measures}
+        rightKey={scale.rightKey}
+        leftDomain={scale.leftDomain}
+        rightDomain={scale.rightDomain}
+        height={340}
+        showLegend={measures.length > 1}
+      />
+    );
+  }
+
+  // Very high cardinality or other awkward shapes read better as a table.
   return <Table cols={cols} rows={rows} />;
 }
