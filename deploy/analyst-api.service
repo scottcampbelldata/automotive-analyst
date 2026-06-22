@@ -1,7 +1,9 @@
-# systemd unit for the Automotive Analyst API (text-to-SQL backend).
+# systemd unit for the Automotive Analyst API (text-to-SQL gateway).
 # Install: sudo cp deploy/analyst-api.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable --now analyst-api
-# Edit the env values (read-only DB role, Anthropic key, CORS origin) first.
+# VPS layout: /opt/automotive-analyst. Ports 8000/8001/8002/8787 are used
+# by other portfolio apps; this API uses 8010. No LLM key here — secrets (just the
+# read-only DATABASE_URL) live in backend/.env, which is git-ignored.
 
 [Unit]
 Description=Automotive Analyst API (text-to-SQL)
@@ -10,10 +12,10 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 User=deploy
+Group=deploy
 WorkingDirectory=/opt/automotive-analyst/backend
-# No LLM key here -- visitors bring their own key in the browser.
-Environment="DATABASE_URL=postgresql://factory_ro:CHANGEME@localhost:5432/manufacturing"
-Environment="CORS_ORIGINS=https://analyst.scottcampbell.io"
+EnvironmentFile=/opt/automotive-analyst/backend/.env
+Environment="PYTHONUNBUFFERED=1"
 ExecStart=/opt/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 2
 Restart=on-failure
 RestartSec=3
