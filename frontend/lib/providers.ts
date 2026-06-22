@@ -108,19 +108,50 @@ function extractSql(raw: string): string | null {
   return match[0].trim();
 }
 
-// Turn whatever the model said into a plan. SQL wins: if the response contains
-// a SELECT, the model did its job. Otherwise, surface the NOT_ANSWERABLE reason
-// (or a default) so the UI can say "not enough data" — never an internal error.
+const NO_DATA_REASON = "The warehouse does not contain enough data for that question.";
+
+// Pull a {answerable, reason, sql, ...} object out of the response if one is
+// there. Tolerant by design: depending on which system-prompt version the
+// backend currently serves, the model may wrap its answer in JSON or not. We
+// handle both so a frontend/backend deploy skew can never strand the user.
+function tryParseJsonObject(s: string): Record<string, unknown> | null {
+  const start = s.indexOf("{");
+  const end = s.lastIndexOf("}");
+  if (start === -1 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(s.slice(start, end + 1));
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Turn whatever the model said into a plan, in priority order:
+//   1. a JSON object (old contract) — read its sql/answerable/reason fields, so
+//      prose in `reason` is never mistaken for SQL;
+//   2. a NOT_ANSWERABLE sentinel (new contract) — out-of-schema question;
+//   3. raw SQL.
+// Anything else becomes a clean "not enough data" message, never an internal error.
 function interpretPlan(raw: string): QueryPlan {
-  const sql = extractSql(raw);
-  if (sql) return { answerable: true, reason: "", sql };
   const cleaned = stripFences(raw);
-  const reason = cleaned.match(/NOT_ANSWERABLE\s*:?\s*([\s\S]*)/i)?.[1]?.trim();
-  return {
-    answerable: false,
-    reason: reason || "The warehouse does not contain enough data for that question.",
-    sql: null,
-  };
+
+  const obj = tryParseJsonObject(cleaned);
+  if (obj) {
+    const sql = typeof obj.sql === "string" ? stripFences(obj.sql).trim() : "";
+    if (obj.answerable === false || !sql) {
+      return { answerable: false, reason: String(obj.reason || NO_DATA_REASON), sql: null };
+    }
+    return { answerable: true, reason: String(obj.reason || ""), sql };
+  }
+
+  if (/^\s*NOT_ANSWERABLE/i.test(cleaned)) {
+    const reason = cleaned.replace(/^\s*NOT_ANSWERABLE\s*:?\s*/i, "").trim();
+    return { answerable: false, reason: reason || NO_DATA_REASON, sql: null };
+  }
+
+  const sql = extractSql(cleaned);
+  if (sql) return { answerable: true, reason: "", sql };
+  return { answerable: false, reason: NO_DATA_REASON, sql: null };
 }
 
 async function providerError(res: Response, name: string): Promise<string> {
@@ -194,13 +225,21 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
   // Key goes in a header, not the URL query string — so it can't land in any
   // URL log and stays consistent with the other providers.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${creds.model}:generateContent`;
+  // Gemini 3 models "think" by default, which made SQL generation take minutes.
+  // Text-to-SQL grounded in the schema doesn't need it — disable thinking on
+  // Flash-class models (thinkingBudget: 0). Pro models can't disable thinking,
+  // so leave them on their default for those.
+  const generationConfig: Record<string, unknown> = { temperature: 0 };
+  if (/flash/i.test(creds.model)) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", "x-goog-api-key": creds.key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents,
-      generationConfig: { temperature: 0 },
+      generationConfig,
     }),
   });
   if (!res.ok) throw new Error(await providerError(res, "Gemini"));
