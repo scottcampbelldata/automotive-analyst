@@ -14,10 +14,11 @@
 
 import type { Creds, Provider } from "./keyStore";
 
-// Headroom for one SELECT. The pill questions are short, but arbitrary
-// questions produce CTEs and multi-step queries that overran the old 600-token
-// cap and came back truncated.
-const MAX_OUTPUT_TOKENS = 2048;
+// We don't cap output tokens — a truncated reply is worse than a long one.
+// OpenAI and Gemini let us omit the cap entirely (model default). Anthropic's
+// Messages API requires max_tokens, so we send the largest value its current
+// models accept (64K covers Haiku/Sonnet 4.x; Opus allows more).
+const ANTHROPIC_MAX_TOKENS = 64000;
 
 const NOT_ANSWERABLE = "NOT_ANSWERABLE:";
 
@@ -149,7 +150,7 @@ async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promi
     },
     body: JSON.stringify({
       model: creds.model,
-      max_tokens: MAX_OUTPUT_TOKENS,
+      max_tokens: ANTHROPIC_MAX_TOKENS,
       system,
       messages: turns,
     }),
@@ -170,7 +171,6 @@ async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<
       model: creds.model,
       instructions: system,
       input: turns,
-      max_output_tokens: MAX_OUTPUT_TOKENS,
       reasoning: { effort: "low" },
       text: { verbosity: "low" },
     }),
@@ -200,7 +200,7 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents,
-      generationConfig: { temperature: 0, maxOutputTokens: MAX_OUTPUT_TOKENS },
+      generationConfig: { temperature: 0 },
     }),
   });
   if (!res.ok) throw new Error(await providerError(res, "Gemini"));
