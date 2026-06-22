@@ -118,11 +118,11 @@ Open the app, pick a provider, paste your own API key, and ask a question.
 Deployment (read-only role, systemd, nginx + TLS, Cloudflare Pages) is in
 [`deploy/RUNBOOK.md`](deploy/RUNBOOK.md).
 
-## What to say about it in an interview
+## Design highlights
 
-- *Trust boundary:* "The backend never holds anyone's key and safely executes even
-  untrusted SQL, because the allow-list guardrails plus a read-only role make the
-  data store fail-safe."
-- *Provider abstraction:* one interface over three LLMs' differing request/response
-  shapes, swappable at runtime.
-- *Tested security:* the guardrail allow-list is covered by attack-case tests in CI.
+- **Trust boundary** — the backend never holds anyone's key and safely executes
+  even untrusted SQL; the allow-list guardrails plus a read-only role make the
+  data store fail-safe.
+- **Provider abstraction** — one interface over three LLMs' differing request/
+  response shapes, swappable at runtime.
+- **Tested security** — the guardrail allow-list is covered by attack-case tests in CI.
