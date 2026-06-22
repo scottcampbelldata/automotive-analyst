@@ -1,0 +1,24 @@
+# systemd unit for the Automotive Analyst API (text-to-SQL backend).
+# Install: sudo cp deploy/analyst-api.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now analyst-api
+# Edit the env values (read-only DB role, Anthropic key, CORS origin) first.
+
+[Unit]
+Description=Automotive Analyst API (text-to-SQL)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/opt/automotive-analyst/backend
+Environment="DATABASE_URL=postgresql://factory_ro:CHANGEME@localhost:5432/manufacturing"
+Environment="CORS_ORIGINS=https://analyst.scottcampbell.io"
+Environment="AGENT_PROVIDER=anthropic"
+Environment="ANTHROPIC_API_KEY=sk-ant-REPLACE"
+Environment="ANTHROPIC_MODEL=claude-sonnet-4-6"
+ExecStart=/opt/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 2
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,211 @@
+"use client";
+import { useEffect, useState } from "react";
+import { api, AskResponse } from "@/lib/api";
+import {
+  ResponsiveContainer, BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+} from "recharts";
+
+const DASHBOARD_URL = "https://factory.scottcampbell.io";
+const AXIS = { fill: "#8896b4", fontSize: 12 };
+const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
+
+function ResultChart({ res }: { res: AskResponse }) {
+  const cols = res.columns ?? [];
+  const rows = res.rows ?? [];
+
+  if (res.viz === "bar" && cols.length >= 2) {
+    return (
+      <ResponsiveContainer width="100%" height={300}>
+        <BarChart data={rows} margin={{ top: 8, right: 8, left: -10, bottom: 40 }}>
+          <CartesianGrid stroke="#1f2a44" vertical={false} />
+          <XAxis dataKey={cols[0]} tick={AXIS} angle={-20} textAnchor="end" interval={0} />
+          <YAxis tick={AXIS} />
+          <Tooltip contentStyle={TIP} />
+          <Bar dataKey={cols[1]} fill="#e0653f" radius={[5, 5, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  }
+  if (res.viz === "line" && cols.length >= 2) {
+    const yKey = cols.find((c, i) => i > 0 && typeof rows[0][c] === "number") ?? cols[1];
+    return (
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={rows} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
+          <CartesianGrid stroke="#1f2a44" vertical={false} />
+          <XAxis dataKey={cols[0]} tick={AXIS} />
+          <YAxis tick={AXIS} />
+          <Tooltip contentStyle={TIP} />
+          <Line dataKey={yKey} stroke="#e6ecf7" strokeWidth={2} dot={{ r: 2 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    );
+  }
+  if (res.viz === "scalar") {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cols.map((c) => (
+          <div key={c} className="kpi">
+            <div className="kpi-value">{String(rows[0][c])}</div>
+            <div className="kpi-label">{c.replace(/_/g, " ")}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-auto max-h-[420px]">
+      <table className="data w-full">
+        <thead className="sticky top-0 bg-panel">
+          <tr className="text-left">
+            {cols.map((c) => <th key={c} className="py-1 pr-4">{c}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {cols.map((c) => <td key={c} className="py-1.5 pr-4">{String(r[c])}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function Home() {
+  const [samples, setSamples] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState<AskResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.askSamples().then(setSamples).catch(() => setSamples([]));
+  }, []);
+
+  async function run(question: string) {
+    if (!question.trim()) return;
+    setLoading(true);
+    setRes(null);
+    setQ(question);
+    try {
+      setRes(await api.ask(question));
+    } catch (e) {
+      setRes({ ok: false, stage: "network", error: String(e) });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="max-w-5xl mx-auto p-6 md:p-8 space-y-6">
+      <header className="flex items-end justify-between gap-3">
+        <div>
+          <div className="eyebrow mb-1">Natural-language analytics · text-to-SQL</div>
+          <h1 className="text-2xl md:text-3xl font-semibold text-white tracking-tight">
+            Automotive Analyst
+          </h1>
+          <p className="text-mute text-sm mt-1 max-w-2xl">
+            Ask the assembly-plant warehouse a question in plain English. The
+            agent grounds it in the star schema, writes PostgreSQL, validates it
+            through read-only guardrails, and runs it — and always shows you the
+            query behind the answer.
+          </p>
+        </div>
+        <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
+          Dashboard ↗
+        </a>
+      </header>
+
+      <div className="card">
+        <div className="flex gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run(q)}
+            placeholder="e.g. which station lost the most downtime hours on the night crew?"
+            className="flex-1 bg-[var(--panel-2)] border border-edge rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-faint outline-none focus:border-accent"
+          />
+          <button
+            onClick={() => run(q)}
+            disabled={loading}
+            className="px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-50"
+          >
+            {loading ? "Thinking…" : "Ask"}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {samples.map((s) => (
+            <button
+              key={s}
+              onClick={() => run(s)}
+              className="text-xs text-mute border border-edge rounded-full px-3 py-1 hover:border-accent hover:text-white transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {res && (
+        <div className="card space-y-4">
+          {res.ok ? (
+            <>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="section-title">Answer</div>
+                <span className="text-xs text-good border border-good/40 rounded-full px-2.5 py-0.5">
+                  guardrail: {res.guardrail}
+                </span>
+              </div>
+              <ResultChart res={res} />
+              <div className="text-xs text-faint">{res.row_count} row(s)</div>
+            </>
+          ) : (
+            <div>
+              <div className="text-accent font-medium mb-1">
+                {res.stage === "guardrail"
+                  ? "Query blocked by guardrails"
+                  : `Could not answer (${res.stage})`}
+              </div>
+              <p className="text-sm text-mute">{res.error}</p>
+            </div>
+          )}
+
+          {res.sql && (
+            <div>
+              <div className="text-xs text-faint uppercase tracking-wider mb-1.5">
+                Generated SQL
+              </div>
+              <pre className="bg-[var(--panel-2)] border border-edge rounded-lg p-3 text-xs text-[#cdd7ea] overflow-auto whitespace-pre-wrap">
+                {res.sql}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="card">
+        <div className="eyebrow mb-2">How it works</div>
+        <div className="grid sm:grid-cols-4 gap-3 text-sm">
+          {[
+            ["1 · Ground", "The question is paired with the star-schema definition and few-shot examples."],
+            ["2 · Generate", "An LLM writes a single PostgreSQL SELECT — no commentary."],
+            ["3 · Guardrail", "Read-only check: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
+            ["4 · Execute", "Run as a read-only role inside a read-only transaction with a statement timeout."],
+          ].map(([t, d]) => (
+            <div key={t} className="border border-edge rounded-lg p-3">
+              <div className="text-accent text-xs font-semibold mb-1">{t}</div>
+              <div className="text-mute text-xs leading-relaxed">{d}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <footer className="text-xs text-faint pt-4 border-t border-edge">
+        Built by Scott Campbell · FastAPI · PostgreSQL · Next.js · Recharts.
+        Reads the same warehouse as the dashboard, read-only. Data is fully
+        synthetic; no proprietary or employer data.
+      </footer>
+    </main>
+  );
+}
