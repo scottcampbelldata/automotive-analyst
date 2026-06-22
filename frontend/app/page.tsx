@@ -13,6 +13,23 @@ const DASHBOARD_URL = "https://factory.scottcampbell.io";
 const AXIS = { fill: "#8896b4", fontSize: 12 };
 const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// SQL date_trunc returns full ISO timestamps (2024-06-01T00:00:00) that are
+// ugly on a chart axis. Render those as readable dates; leave everything else
+// (numbers, station names, fault codes) exactly as-is.
+function formatLabel(v: unknown): string {
+  if (typeof v !== "string") return String(v);
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if (!m) return v;
+  const [, y, mo, d, hh, mm] = m;
+  const month = MONTHS[Number(mo) - 1] ?? mo;
+  const midnight = !hh || (hh === "00" && mm === "00");
+  if (d === "01" && midnight) return `${month} ${y}`; // month grain
+  if (midnight) return `${month} ${Number(d)}, ${y}`; // day grain
+  return `${month} ${Number(d)}, ${y} ${hh}:${mm}`; // with time
+}
+
 type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
 
 function ResultChart({ res }: { res: RunResponse }) {
@@ -24,9 +41,16 @@ function ResultChart({ res }: { res: RunResponse }) {
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={rows} margin={{ top: 8, right: 8, left: -10, bottom: 40 }}>
           <CartesianGrid stroke="#1f2a44" vertical={false} />
-          <XAxis dataKey={cols[0]} tick={AXIS} angle={-20} textAnchor="end" interval={0} />
+          <XAxis
+            dataKey={cols[0]}
+            tick={AXIS}
+            angle={-20}
+            textAnchor="end"
+            interval={0}
+            tickFormatter={formatLabel}
+          />
           <YAxis tick={AXIS} />
-          <Tooltip contentStyle={TIP} />
+          <Tooltip contentStyle={TIP} labelFormatter={formatLabel} />
           <Bar dataKey={cols[1]} fill="#e0653f" radius={[5, 5, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -38,9 +62,9 @@ function ResultChart({ res }: { res: RunResponse }) {
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={rows} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
           <CartesianGrid stroke="#1f2a44" vertical={false} />
-          <XAxis dataKey={cols[0]} tick={AXIS} />
+          <XAxis dataKey={cols[0]} tick={AXIS} tickFormatter={formatLabel} />
           <YAxis tick={AXIS} />
-          <Tooltip contentStyle={TIP} />
+          <Tooltip contentStyle={TIP} labelFormatter={formatLabel} />
           <Line dataKey={yKey} stroke="#e6ecf7" strokeWidth={2} dot={{ r: 2 }} />
         </LineChart>
       </ResponsiveContainer>
@@ -69,7 +93,7 @@ function ResultChart({ res }: { res: RunResponse }) {
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
-              {cols.map((c) => <td key={c} className="py-1.5 pr-4">{String(r[c])}</td>)}
+              {cols.map((c) => <td key={c} className="py-1.5 pr-4">{formatLabel(r[c])}</td>)}
             </tr>
           ))}
         </tbody>
