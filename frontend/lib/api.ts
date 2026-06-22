@@ -6,18 +6,35 @@ import type { SchemaContext } from "./providers";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8010";
 
+// Hard ceiling so a slow or waking-up backend can't hang the UI forever.
+const API_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(path: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
+  try {
+    return await fetch(`${BASE}${path}`, { ...init, cache: "no-store", signal: ctrl.signal });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error(`The analyst API didn't respond within ${API_TIMEOUT_MS / 1000}s. Try again.`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { cache: "no-store" });
+  const res = await fetchWithTimeout(path, {});
   if (!res.ok) throw new Error(`API ${path} -> ${res.status}`);
   return res.json() as Promise<T>;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithTimeout(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    cache: "no-store",
   });
   if (res.status === 429)
     throw new Error("You're sending requests too quickly — give it a few seconds.");
