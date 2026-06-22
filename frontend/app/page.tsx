@@ -30,6 +30,20 @@ function formatLabel(v: unknown): string {
   return `${month} ${Number(d)}, ${y} ${hh}:${mm}`; // with time
 }
 
+// "preventive_downtime_min" -> "Preventive Downtime Min"
+function humanizeKey(s: unknown): string {
+  return String(s)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Numbers get thousands separators (5259.1 -> "5,259.1"); non-numbers pass
+// through. Used for measure values only (tooltip, Y axis, KPIs) — never the
+// X axis, where a year like 2024 must not become "2,024".
+function formatValue(v: unknown): string {
+  return typeof v === "number" ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : String(v);
+}
+
 type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
 
 function ResultChart({ res }: { res: RunResponse }) {
@@ -49,8 +63,12 @@ function ResultChart({ res }: { res: RunResponse }) {
             interval={0}
             tickFormatter={formatLabel}
           />
-          <YAxis tick={AXIS} />
-          <Tooltip contentStyle={TIP} labelFormatter={formatLabel} />
+          <YAxis tick={AXIS} tickFormatter={formatValue} />
+          <Tooltip
+            contentStyle={TIP}
+            labelFormatter={formatLabel}
+            formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
+          />
           <Bar dataKey={cols[1]} fill="#e0653f" radius={[5, 5, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
@@ -63,8 +81,12 @@ function ResultChart({ res }: { res: RunResponse }) {
         <LineChart data={rows} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
           <CartesianGrid stroke="#1f2a44" vertical={false} />
           <XAxis dataKey={cols[0]} tick={AXIS} tickFormatter={formatLabel} />
-          <YAxis tick={AXIS} />
-          <Tooltip contentStyle={TIP} labelFormatter={formatLabel} />
+          <YAxis tick={AXIS} tickFormatter={formatValue} />
+          <Tooltip
+            contentStyle={TIP}
+            labelFormatter={formatLabel}
+            formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
+          />
           <Line dataKey={yKey} stroke="#e6ecf7" strokeWidth={2} dot={{ r: 2 }} />
         </LineChart>
       </ResponsiveContainer>
@@ -75,8 +97,8 @@ function ResultChart({ res }: { res: RunResponse }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {cols.map((c) => (
           <div key={c} className="kpi">
-            <div className="kpi-value">{String(rows[0][c])}</div>
-            <div className="kpi-label">{c.replace(/_/g, " ")}</div>
+            <div className="kpi-value">{formatValue(rows[0][c])}</div>
+            <div className="kpi-label">{humanizeKey(c)}</div>
           </div>
         ))}
       </div>
