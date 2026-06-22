@@ -197,6 +197,9 @@ function MeasureChart({
         contentStyle={TIP}
         labelFormatter={formatLabel}
         formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
+        // Default cursor is a bright grey block that fights the dark theme;
+        // use a faint highlight (soft line for time, soft fill for bars).
+        cursor={isTime ? { stroke: "#3b4a6b" } : { fill: "rgba(136,150,180,0.10)" }}
       />
       {showLegend && <Legend formatter={humanizeKey} wrapperStyle={{ fontSize: 12 }} />}
     </>
