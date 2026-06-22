@@ -169,23 +169,52 @@ async function providerError(res: Response, name: string): Promise<string> {
   return `${name} error ${res.status}: ${detail || res.statusText}`;
 }
 
+// Hard ceiling on any provider call. Without this, a stalled request never
+// settles, so the page sits on "Working…" forever with the button disabled and
+// no way to recover. On timeout we abort and throw, which lets the caller's
+// finally reset the UI and show an error.
+const REQUEST_TIMEOUT_MS = 90_000;
+
+async function postJSON(
+  url: string,
+  headers: Record<string, string>,
+  body: unknown,
+  name: string,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error(
+        `${name} didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s — request cancelled. Try again.`,
+      );
+    }
+    throw new Error(`${name} request failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promise<string> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
+  const res = await postJSON(
+    "https://api.anthropic.com/v1/messages",
+    {
       "content-type": "application/json",
       "x-api-key": creds.key,
       "anthropic-version": "2023-06-01",
       // Required to allow calling the Messages API directly from a browser.
       "anthropic-dangerous-direct-browser-access": "true",
     },
-    body: JSON.stringify({
-      model: creds.model,
-      max_tokens: ANTHROPIC_MAX_TOKENS,
-      system,
-      messages: turns,
-    }),
-  });
+    { model: creds.model, max_tokens: ANTHROPIC_MAX_TOKENS, system, messages: turns },
+    "Anthropic",
+  );
   if (!res.ok) throw new Error(await providerError(res, "Anthropic"));
   const data = await res.json();
   return (data.content ?? [])
@@ -195,17 +224,18 @@ async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promi
 }
 
 async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${creds.key}` },
-    body: JSON.stringify({
+  const res = await postJSON(
+    "https://api.openai.com/v1/responses",
+    { "content-type": "application/json", authorization: `Bearer ${creds.key}` },
+    {
       model: creds.model,
       instructions: system,
       input: turns,
       reasoning: { effort: "low" },
       text: { verbosity: "low" },
-    }),
-  });
+    },
+    "OpenAI",
+  );
   if (!res.ok) throw new Error(await providerError(res, "OpenAI"));
   const data = await res.json();
   if (typeof data.output_text === "string") return data.output_text;
@@ -233,15 +263,16 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
   if (/flash/i.test(creds.model)) {
     generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": creds.key },
-    body: JSON.stringify({
+  const res = await postJSON(
+    url,
+    { "content-type": "application/json", "x-goog-api-key": creds.key },
+    {
       systemInstruction: { parts: [{ text: system }] },
       contents,
       generationConfig,
-    }),
-  });
+    },
+    "Gemini",
+  );
   if (!res.ok) throw new Error(await providerError(res, "Gemini"));
   const data = await res.json();
   const parts = data.candidates?.[0]?.content?.parts ?? [];
