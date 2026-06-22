@@ -24,6 +24,10 @@ interface Turn {
   content: string;
 }
 
+interface ProviderCallOptions {
+  responseMimeType?: "application/json";
+}
+
 function buildTurns(ctx: SchemaContext, question: string): Turn[] {
   const turns: Turn[] = [];
   for (const ex of ctx.examples) {
@@ -168,7 +172,12 @@ async function providerError(res: Response, name: string): Promise<string> {
   return `${name} error ${res.status}: ${detail || res.statusText}`;
 }
 
-async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promise<string> {
+async function callAnthropic(
+  creds: Creds,
+  system: string,
+  turns: Turn[],
+  _options: ProviderCallOptions = {},
+): Promise<string> {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -188,7 +197,12 @@ async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promi
     .join("");
 }
 
-async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<string> {
+async function callOpenAI(
+  creds: Creds,
+  system: string,
+  turns: Turn[],
+  _options: ProviderCallOptions = {},
+): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${creds.key}` },
@@ -212,7 +226,12 @@ async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<
     .join("");
 }
 
-async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<string> {
+async function callGemini(
+  creds: Creds,
+  system: string,
+  turns: Turn[],
+  options: ProviderCallOptions = {},
+): Promise<string> {
   const contents = turns.map((t) => ({
     role: t.role === "assistant" ? "model" : "user",
     parts: [{ text: t.content }],
@@ -226,7 +245,11 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents,
-      generationConfig: { temperature: 0, maxOutputTokens: 600 },
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 600,
+        ...(options.responseMimeType ? { responseMimeType: options.responseMimeType } : {}),
+      },
     }),
   });
   if (!res.ok) throw new Error(await providerError(res, "Gemini"));
@@ -235,7 +258,10 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
   return parts.map((p: { text?: string }) => p.text ?? "").join("");
 }
 
-const DISPATCH: Record<Provider, (c: Creds, s: string, t: Turn[]) => Promise<string>> = {
+const DISPATCH: Record<
+  Provider,
+  (c: Creds, s: string, t: Turn[], o?: ProviderCallOptions) => Promise<string>
+> = {
   anthropic: callAnthropic,
   openai: callOpenAI,
   gemini: callGemini,
@@ -260,7 +286,9 @@ export async function planQuery(
 ): Promise<QueryPlan> {
   const exact = exactExamplePlan(ctx, question);
   if (exact) return exact;
-  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question));
+  const raw = await DISPATCH[creds.provider](creds, ctx.system, buildPlannerTurns(ctx, question), {
+    responseMimeType: "application/json",
+  });
   return parseQueryPlan(raw);
 }
 
