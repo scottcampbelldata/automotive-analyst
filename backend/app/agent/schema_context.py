@@ -59,9 +59,16 @@ ANALYTICAL VIEWS (prefer these when they fit the question)
 RULES
   - Reply with ONE PostgreSQL SELECT and nothing else - no prose, no markdown
     fences, no JSON. The user never writes SQL; producing it is your job.
-  - If, and only if, the question needs data outside this schema, reply with
-    exactly "NOT_ANSWERABLE: <one concise warehouse limitation>" and no SQL.
-    Make the reason specific to what this warehouse lacks, not a generic apology.
+  - Default to answering. Comparison, correlation, trend, ranking, and
+    "does X relate to Y" questions ARE answerable whenever both quantities live
+    in this schema: aggregate each to a common grain (e.g. per line per month)
+    and JOIN them, using CTEs, window functions, or statistical aggregates
+    (corr, stddev, regr_*, percentile_cont) - all supported by PostgreSQL - so
+    the relationship shows up in the rows.
+  - Only reply "NOT_ANSWERABLE: <reason>" when a table or column the question
+    truly needs is absent from the schema above (e.g. supplier, stock price,
+    weather, cost). Never refuse because a question is analytically complex,
+    needs a join, or asks for a correlation. When unsure, write the SELECT.
   - Read-only: never write, alter, or use admin/pg_* functions.
   - Always include a sensible ORDER BY; cap detail queries with LIMIT.
   - Use date_trunc / EXTRACT for time grouping. Quarters: date_trunc('quarter', ts).
@@ -126,6 +133,24 @@ FEW_SHOT = [
         "SELECT fault_code, fault_desc, ROUND(SUM(downtime_min)/60.0, 1) AS downtime_hours\n"
         "FROM fact_fault_events\n"
         "GROUP BY fault_code, fault_desc ORDER BY downtime_hours DESC LIMIT 5;",
+    ),
+    (
+        "Do months with more fault downtime have lower yield, by line?",
+        "WITH fault AS (\n"
+        "  SELECT line, date_trunc('month', ts) AS month,\n"
+        "         SUM(downtime_min) / 60.0 AS fault_downtime_hours\n"
+        "  FROM fact_fault_events GROUP BY line, date_trunc('month', ts)\n"
+        "),\n"
+        "prod AS (\n"
+        "  SELECT line, date_trunc('month', ts) AS month,\n"
+        "         AVG(yield_pct) AS avg_yield_pct\n"
+        "  FROM fact_production GROUP BY line, date_trunc('month', ts)\n"
+        ")\n"
+        "SELECT f.line, f.month,\n"
+        "       ROUND(f.fault_downtime_hours::numeric, 1) AS fault_downtime_hours,\n"
+        "       ROUND(p.avg_yield_pct::numeric, 2) AS avg_yield_pct\n"
+        "FROM fault f JOIN prod p ON p.line = f.line AND p.month = f.month\n"
+        "ORDER BY f.line, f.month;",
     ),
 ]
 
