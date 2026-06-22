@@ -392,7 +392,9 @@ export function ResultChart({ res }: { res: RunResponse }) {
     }
   }
 
-  // Case C — wide format, one or more measures, no series split.
+  // Case C — wide format, one or more measures, no series split. A single chart
+  // doesn't need a forced left domain (recharts picks rounder ticks on its own);
+  // only the secondary axis is zoomed when it's a dual-axis chart.
   if (!seriesCol && measures.length >= 1 && !tooManyBars) {
     const scale = measureScale(rows, measures);
     const data = isTime ? [...rows].sort(byDate(axisCol)) : rows;
@@ -403,7 +405,6 @@ export function ResultChart({ res }: { res: RunResponse }) {
         isTime={isTime}
         keys={measures}
         rightKey={scale.rightKey}
-        leftDomain={scale.leftDomain}
         rightDomain={scale.rightDomain}
         height={340}
         showLegend={measures.length > 1}
