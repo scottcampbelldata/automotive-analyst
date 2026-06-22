@@ -244,14 +244,14 @@ function MeasureChart({
 // uncluttered while colors map consistently across every panel.
 function LegendChips({ keys }: { keys: string[] }) {
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-3 text-xs text-mute">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mb-3 text-xs text-mute">
       {keys.map((k, i) => (
-        <span key={k} className="inline-flex items-center gap-1.5">
+        <span key={k} className="inline-flex items-center gap-2">
           <span
-            className="inline-block w-3 h-3 rounded-sm"
+            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
             style={{ background: PALETTE[i % PALETTE.length] }}
           />
-          {humanizeKey(k)}
+          <span>{humanizeKey(k)}</span>
         </span>
       ))}
     </div>
