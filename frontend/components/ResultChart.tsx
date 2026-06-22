@@ -243,13 +243,25 @@ function MeasureChart({
 // One shared legend chip row, used above small multiples so each facet stays
 // uncluttered while colors map consistently across every panel.
 function LegendChips({ keys }: { keys: string[] }) {
+  // Inline styles (not Tailwind classes) so the swatches and spacing render
+  // reliably regardless of the build's class generation.
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mb-3 text-xs text-mute">
+    <div
+      className="mb-3 text-xs text-mute"
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 22px" }}
+    >
       {keys.map((k, i) => (
-        <span key={k} className="inline-flex items-center gap-2">
+        <span key={k} style={{ display: "inline-flex", alignItems: "center" }}>
           <span
-            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ background: PALETTE[i % PALETTE.length] }}
+            style={{
+              display: "inline-block",
+              width: 10,
+              height: 10,
+              borderRadius: 9999,
+              flexShrink: 0,
+              marginRight: 8,
+              background: PALETTE[i % PALETTE.length],
+            }}
           />
           <span>{humanizeKey(k)}</span>
         </span>
