@@ -37,3 +37,11 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "sqlcoder")
+
+# Guardrails on the public endpoint (it calls a paid LLM + the DB per request).
+MAX_QUESTION_CHARS = int(os.environ.get("MAX_QUESTION_CHARS", "500"))
+RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "20"))          # requests
+RATE_LIMIT_WINDOW_S = int(os.environ.get("RATE_LIMIT_WINDOW_S", "60"))  # per window
+QUERY_TIMEOUT_MS = int(os.environ.get("QUERY_TIMEOUT_MS", "5000"))
+
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
