@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0e1a;
+  --panel: #121a2e;
+  --panel-2: #0e1525;
+  --edge: #1f2a44;
+  --ink: #eef3fc;
+  --mute: #8896b4;
+  --faint: #5d6a86;
+  --accent: #e0653f;
+  --good: #3aa17a;
+}
+
+* { -webkit-font-smoothing: antialiased; }
+
+body {
+  background:
+    radial-gradient(1100px 520px at 78% -8%, #16203a 0%, rgba(10, 14, 26, 0) 60%),
+    var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0) 40%),
+    var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  padding: 1.35rem 1.45rem;
+  box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.7);
+}
+
+.eyebrow {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #f2906f;
+}
+.section-title { font-size: 1.06rem; font-weight: 650; color: #fff; }
+
+.kpi {
+  position: relative; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--edge);
+  border-radius: 14px; padding: 1rem 1.1rem;
+}
+.kpi::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent), transparent);
+}
+.kpi-value { font-size: 1.5rem; font-weight: 680; color: #fff; letter-spacing: -0.03em; }
+.kpi-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--mute); margin-top: 0.4rem; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.72rem; color: var(--mute);
+  border: 1px solid var(--edge); background: var(--panel-2);
+  border-radius: 999px; padding: 0.32rem 0.8rem; text-decoration: none;
+}
+
+table.data th { font-weight: 600; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint); }
+table.data td { font-size: 0.86rem; }
+table.data tr + tr td { border-top: 1px solid #18223a; }
+
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-thumb { background: #243049; border-radius: 8px; }
