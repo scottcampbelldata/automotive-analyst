@@ -204,10 +204,21 @@ export function ResultChart({ res }: { res: RunResponse }) {
   const axisCol = dateCols[0] ?? categoricalCols[0] ?? cols[0];
   const isTime = dateCols.includes(axisCol);
 
-  // A low-cardinality category (other than the axis) becomes the series split.
-  const seriesCol = categoricalCols.find(
-    (c) => c !== axisCol && distinctValues(rows, c).length >= 2 && distinctValues(rows, c).length <= 8,
-  );
+  // A low-cardinality category becomes a series split ONLY in true long format
+  // (more rows than distinct axis values, i.e. several rows per axis value). In
+  // wide format every extra category is a 1:1 label (e.g. fault_desc next to
+  // fault_code), not a dimension to split on.
+  const distinctAxis = distinctValues(rows, axisCol).length;
+  const longFormat = rows.length > distinctAxis;
+  const seriesCol = longFormat
+    ? categoricalCols.find(
+        (c) =>
+          c !== axisCol &&
+          distinctValues(rows, c).length >= 2 &&
+          distinctValues(rows, c).length <= 8 &&
+          distinctValues(rows, c).length < distinctAxis,
+      )
+    : undefined;
 
   const measures = numericCols;
   const height = 340;
