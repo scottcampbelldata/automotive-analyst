@@ -19,16 +19,16 @@ export const PROVIDERS: { id: Provider; label: string; keysUrl: string }[] = [
 
 export const DEFAULT_MODEL: Record<Provider, string> = {
   anthropic: "claude-sonnet-4-6",
-  openai: "gpt-4o",
-  gemini: "gemini-2.0-flash",
+  openai: "gpt-5.4-mini",
+  gemini: "gemini-3.5-flash",
 };
 
 // Suggestions shown in the model picker; the field stays free-text so a visitor
 // can use whatever model their key has access to.
 export const MODEL_SUGGESTIONS: Record<Provider, string[]> = {
-  anthropic: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-3-5-sonnet-latest"],
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4.1"],
-  gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  anthropic: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-fable-5", "claude-haiku-4-5"],
+  openai: ["gpt-5.4-mini", "gpt-5.5", "gpt-5.4", "gpt-5.4-nano"],
+  gemini: ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview", "gemini-3-flash-preview"],
 };
 
 const STORAGE_KEY = "analyst.creds";

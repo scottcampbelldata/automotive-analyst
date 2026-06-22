@@ -87,15 +87,27 @@ async function callAnthropic(creds: Creds, system: string, turns: Turn[]): Promi
 }
 
 async function callOpenAI(creds: Creds, system: string, turns: Turn[]): Promise<string> {
-  const messages = [{ role: "system", content: system }, ...turns];
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${creds.key}` },
-    body: JSON.stringify({ model: creds.model, messages, temperature: 0, max_tokens: 600 }),
+    body: JSON.stringify({
+      model: creds.model,
+      instructions: system,
+      input: turns,
+      max_output_tokens: 600,
+      reasoning: { effort: "low" },
+      text: { verbosity: "low" },
+    }),
   });
   if (!res.ok) throw new Error(await providerError(res, "OpenAI"));
   const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  if (typeof data.output_text === "string") return data.output_text;
+  const output = data.output ?? [];
+  return output
+    .flatMap((item: { content?: { type?: string; text?: string }[] }) => item.content ?? [])
+    .filter((part: { type?: string; text?: string }) => part.type === "output_text")
+    .map((part: { text?: string }) => part.text ?? "")
+    .join("");
 }
 
 async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<string> {
