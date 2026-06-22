@@ -1,34 +1,34 @@
 # Deployment Runbook — Automotive Analyst
 
-Backend (SQL gateway API) runs on the VPS alongside the other portfolio APIs;
-frontend is static on Cloudflare Pages. The agent reads the **existing dashboard
-database** (`manufacturing`) read-only — it does not create or load any data.
-**There is no LLM API key on the server**: visitors bring their own key in the
-browser, so the server's only secret is the read-only database connection.
+Backend (SQL gateway API) runs on a VPS behind nginx; the frontend is static on
+Cloudflare Pages. The agent reads an existing PostgreSQL warehouse **read-only**
+— it does not create or load any data. **There is no LLM API key on the server**:
+visitors bring their own key in the browser, so the server's only secret is the
+read-only database connection.
 
-| Piece    | Where            | Address / detail                          |
-|----------|------------------|-------------------------------------------|
-| Frontend | Cloudflare Pages | https://analyst.scottcampbell.io          |
+| Piece    | Where            | Detail                                            |
+|----------|------------------|---------------------------------------------------|
+| Frontend | Cloudflare Pages | https://analyst.scottcampbell.io                  |
 | API      | VPS + nginx      | https://analyst-api.scottcampbell.io → 127.0.0.1:8010 |
-| Database | VPS Postgres     | `manufacturing`, read-only role `factory_ro` |
-| VPS      | <your-vps-ip>    | `/opt/automotive-analyst`, user `deploy` |
+| Database | VPS PostgreSQL   | read-only role `factory_ro`                       |
 
-Ports 8000/8001/8002/8787 are taken by other apps; this API uses **8010**.
+Paths below use `/opt/automotive-analyst` and a `deploy` service user — adjust to
+your host. The API uses loopback port `8010`; pick any free one.
 
 ---
 
-## 0. Get the code onto the VPS (no sudo)
+## 0. Get the code onto the VPS
 ```bash
-cd /opt
-git clone https://github.com/scottcampbelldata/automotive-analyst.git
-cd automotive-analyst/backend
+sudo mkdir -p /opt/automotive-analyst && sudo chown "$USER" /opt/automotive-analyst
+git clone https://github.com/scottcampbelldata/automotive-analyst.git /opt/automotive-analyst
+cd /opt/automotive-analyst/backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
 ## 1. Create the READ-ONLY database role (sudo)
-The agent must never write. Create a dedicated read-only role on the same
-Postgres that powers the dashboard, and grant it SELECT on the existing objects:
+The agent must never write. Create a dedicated read-only role on the warehouse
+and grant it SELECT on the existing objects:
 ```bash
 sudo -u postgres psql -d manufacturing <<'SQL'
 CREATE ROLE factory_ro LOGIN PASSWORD 'STRONG_PASSWORD';
@@ -42,8 +42,7 @@ This is the second line of defense — even if a client-supplied query slipped p
 the app-level guardrails, the role cannot write.
 
 ## 2. Backend env (no sudo)
-Create `/opt/automotive-analyst/backend/.env` (git-ignored), using the same
-password as the role above:
+Create `backend/.env` (git-ignored), using the same password as the role above:
 ```bash
 umask 077
 cat > /opt/automotive-analyst/backend/.env <<'ENV'
@@ -72,7 +71,7 @@ journalctl -u analyst-api -n 20 --no-pager
 ```
 
 ## 4. nginx + TLS (sudo)
-Point DNS `analyst-api.scottcampbell.io` → `<your-vps-ip>` first, then:
+Point DNS `analyst-api.scottcampbell.io` at your VPS's IP first, then:
 ```bash
 cd /opt/automotive-analyst
 sudo cp deploy/nginx.conf /etc/nginx/sites-available/analyst-api.scottcampbell.io.conf
