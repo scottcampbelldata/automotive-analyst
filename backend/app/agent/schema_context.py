@@ -5,8 +5,16 @@ it right is most of what makes generated SQL correct.
 """
 
 SCHEMA_PROMPT = """\
-You write PostgreSQL SELECT queries for an automotive final-assembly plant's
-analytics warehouse (3 years of data, 2023-2025). Star schema:
+You are a schema-bound analyst for an automotive final-assembly plant's
+analytics warehouse (3 years of data, 2023-2025). Your job is to decide whether
+a question can be answered from this schema, write safe PostgreSQL SELECTs for
+answerable questions, and explain clearly when the warehouse does not contain
+enough data.
+
+Only use the tables, columns, analytical views, and reference values listed
+below. Do not invent columns, metrics, tables, thresholds, or outside facts.
+
+Star schema:
 
 DIMENSIONS
   dim_asset(asset_id PK, asset_class['robot'|'conveyor'], line, station,
@@ -49,36 +57,20 @@ ANALYTICAL VIEWS (prefer these when they fit the question)
   v_summer_thermal               thermal faults per summer
 
 RULES
-  - Output ONE PostgreSQL SELECT only. No commentary, no markdown fences.
+  - For planning, return JSON only with answerable, reason, sql, and chart.
+  - answerable=false when the question needs data outside this schema.
+  - If answerable=false, sql must be null and reason must be a concise warehouse
+    limitation, not a generic apology.
+  - If answerable=true, sql must be ONE PostgreSQL SELECT only.
   - Read-only: never write, alter, or use admin/pg_* functions.
   - Always include a sensible ORDER BY; cap detail queries with LIMIT.
   - Use date_trunc / EXTRACT for time grouping. Quarters: date_trunc('quarter', ts).
   - "last quarter" = the most recent full calendar quarter present in the data.
   - downtime is in minutes (downtime_min); divide by 60 for hours.
+  - For result summaries, answer only from the supplied rows and SQL.
 """
 
 FEW_SHOT = [
-    (
-        "Which station lost the most downtime hours on the night crew?",
-        "SELECT station, ROUND(SUM(downtime_min)/60.0,0) AS downtime_hours\n"
-        "FROM fact_fault_events WHERE crew = 'D'\n"
-        "GROUP BY station ORDER BY downtime_hours DESC LIMIT 10;",
-    ),
-    (
-        "What's our overall OEE and its components?",
-        "SELECT availability_pct, performance_pct, quality_pct, oee_pct FROM v_oee;",
-    ),
-    (
-        "Which robots have the most faults and are they getting worse?",
-        "SELECT asset_id, station, total_faults, faults_prior, faults_recent, trend\n"
-        "FROM v_robot_candidates ORDER BY total_faults DESC LIMIT 10;",
-    ),
-    (
-        "How did paint defects change over time?",
-        "SELECT date_trunc('month', ts) AS month, COUNT(*) AS paint_defects\n"
-        "FROM fact_defect_events WHERE root_cause_station = 'ST04'\n"
-        "GROUP BY 1 ORDER BY 1;",
-    ),
     (
         "Which station lost the most hours on D-crew last quarter?",
         "SELECT station, ROUND(SUM(downtime_min)/60.0, 1) AS downtime_hours\n"
@@ -88,6 +80,64 @@ FEW_SHOT = [
         "(SELECT date_trunc('quarter', MAX(ts)) FROM fact_fault_events)\n"
         "GROUP BY station ORDER BY downtime_hours DESC LIMIT 10;",
     ),
+    (
+        "What is our overall OEE and its three components?",
+        "SELECT availability_pct, performance_pct, quality_pct, oee_pct FROM v_oee;",
+    ),
+    (
+        "Which robots have a rising fault trend?",
+        "SELECT asset_id, station, total_faults, faults_prior, faults_recent, trend\n"
+        "FROM v_robot_candidates WHERE trend = 'rising'\n"
+        "ORDER BY total_faults DESC LIMIT 10;",
+    ),
+    (
+        "How did spot-weld defects change month over month?",
+        "SELECT date_trunc('month', ts) AS month, COUNT(*) AS spot_weld_defects\n"
+        "FROM fact_defect_events\n"
+        "WHERE root_cause_station = 'ST03' OR defect_type ILIKE '%weld%'\n"
+        "GROUP BY 1 ORDER BY 1;",
+    ),
+    (
+        "Compare yield by line.",
+        "SELECT line, ROUND(AVG(yield_pct)::numeric, 2) AS avg_yield_pct\n"
+        "FROM fact_production\n"
+        "GROUP BY line ORDER BY avg_yield_pct DESC LIMIT 10;",
+    ),
+    (
+        "Which crew has the slowest mean time to repair, and by how much?",
+        "WITH ranked AS (\n"
+        "  SELECT crew, mttr_min,\n"
+        "         mttr_min - MIN(mttr_min) OVER () AS slower_than_best_min\n"
+        "  FROM v_mttr_by_crew\n"
+        ")\n"
+        "SELECT crew, ROUND(mttr_min::numeric, 1) AS mttr_min,\n"
+        "       ROUND(slower_than_best_min::numeric, 1) AS slower_than_best_min\n"
+        "FROM ranked ORDER BY mttr_min DESC LIMIT 1;",
+    ),
+    (
+        "Where do most defects originate vs where are they detected?",
+        "SELECT root_cause_station, detected_station, COUNT(*) AS defects\n"
+        "FROM fact_defect_events\n"
+        "GROUP BY root_cause_station, detected_station\n"
+        "ORDER BY defects DESC LIMIT 10;",
+    ),
+    (
+        "What were the worst 5 fault codes by total downtime?",
+        "SELECT fault_code, fault_desc, ROUND(SUM(downtime_min)/60.0, 1) AS downtime_hours\n"
+        "FROM fact_fault_events\n"
+        "GROUP BY fault_code, fault_desc ORDER BY downtime_hours DESC LIMIT 5;",
+    ),
+]
+
+UNANSWERABLE_EXAMPLES = [
+    {
+        "question": "What was Tesla's stock price last quarter?",
+        "reason": "The warehouse contains plant production, faults, defects, maintenance, shifts, assets, and operational events, but no financial market data.",
+    },
+    {
+        "question": "Which supplier caused the most defects?",
+        "reason": "The defect table has defect type, line, crew, detected station, and root-cause station, but no supplier field.",
+    },
 ]
 
 
@@ -100,4 +150,5 @@ def context() -> dict:
     return {
         "system": SCHEMA_PROMPT,
         "examples": [{"question": q, "sql": a} for q, a in FEW_SHOT],
+        "unanswerable_examples": UNANSWERABLE_EXAMPLES,
     }

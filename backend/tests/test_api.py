@@ -19,6 +19,23 @@ def test_context_endpoint_serves_schema_and_examples(client):
     assert "system" in body and "PostgreSQL" in body["system"]
     assert isinstance(body["examples"], list) and body["examples"]
     assert {"question", "sql"} <= body["examples"][0].keys()
+    assert isinstance(body["unanswerable_examples"], list)
+    assert {"question", "reason"} <= body["unanswerable_examples"][0].keys()
+
+
+def test_sample_questions_have_exact_guardrailed_examples(client):
+    samples = client.get("/api/ask/samples").json()
+    examples = {
+        item["question"]: item["sql"]
+        for item in client.get("/api/ask/context").json()["examples"]
+    }
+
+    missing = [sample for sample in samples if sample not in examples]
+    assert missing == []
+
+    for sample in samples:
+        ok, msg, _sql = client._ask.validate_sql(examples[sample])
+        assert ok, f"{sample}: {msg}"
 
 
 def test_health(client):
