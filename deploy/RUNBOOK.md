@@ -98,7 +98,7 @@ cd /opt/automotive-analyst && git pull --ff-only
 sudo systemctl restart analyst-api
 ```
 
-## Safety model (what to say in an interview)
+## Safety model
 1. App guardrails: single statement, SELECT/WITH only, no DDL/admin keywords,
    blanket `pg_*` ban, info-leak function denylist, table/view allow-list
    (fail-closed), comments stripped, injected LIMIT. Attack-case tests in CI.
