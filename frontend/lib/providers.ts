@@ -8,13 +8,13 @@
 // question. The model replies with either one PostgreSQL SELECT (the normal
 // case) or a `NOT_ANSWERABLE: <reason>` sentinel when the question needs data
 // the warehouse doesn't have. We never ask the user for SQL, and we never make
-// the model wrap its SQL in JSON — emitting SQL is what these models are
+// the model wrap its SQL in JSON - emitting SQL is what these models are
 // reliable at; wrapping it in an escaped JSON envelope is what kept truncating
 // and breaking on longer queries.
 
 import type { Creds, Provider } from "./keyStore";
 
-// We don't cap output tokens — a truncated reply is worse than a long one.
+// We don't cap output tokens - a truncated reply is worse than a long one.
 // OpenAI and Gemini let us omit the cap entirely (model default). Anthropic's
 // Messages API requires max_tokens, so we send the largest value its current
 // models accept (64K covers Haiku/Sonnet 4.x; Opus allows more).
@@ -127,9 +127,9 @@ function tryParseJsonObject(s: string): Record<string, unknown> | null {
 }
 
 // Turn whatever the model said into a plan, in priority order:
-//   1. a JSON object (old contract) — read its sql/answerable/reason fields, so
+//   1. a JSON object (old contract) - read its sql/answerable/reason fields, so
 //      prose in `reason` is never mistaken for SQL;
-//   2. a NOT_ANSWERABLE sentinel (new contract) — out-of-schema question;
+//   2. a NOT_ANSWERABLE sentinel (new contract) - out-of-schema question;
 //   3. raw SQL.
 // Anything else becomes a clean "not enough data" message, never an internal error.
 function interpretPlan(raw: string): QueryPlan {
@@ -193,7 +193,7 @@ async function postJSON(
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
       throw new Error(
-        `${name} didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s — request cancelled. Try again.`,
+        `${name} didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s - request cancelled. Try again.`,
       );
     }
     throw new Error(`${name} request failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -252,11 +252,11 @@ async function callGemini(creds: Creds, system: string, turns: Turn[]): Promise<
     role: t.role === "assistant" ? "model" : "user",
     parts: [{ text: t.content }],
   }));
-  // Key goes in a header, not the URL query string — so it can't land in any
+  // Key goes in a header, not the URL query string - so it can't land in any
   // URL log and stays consistent with the other providers.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${creds.model}:generateContent`;
   // Gemini 3 models "think" by default, which made SQL generation take minutes.
-  // Text-to-SQL grounded in the schema doesn't need it — disable thinking on
+  // Text-to-SQL grounded in the schema doesn't need it - disable thinking on
   // Flash-class models (thinkingBudget: 0). Pro models can't disable thinking,
   // so leave them on their default for those.
   const generationConfig: Record<string, unknown> = { temperature: 0 };

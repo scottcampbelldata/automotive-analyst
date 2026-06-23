@@ -44,7 +44,7 @@ export function KeyPanel({
         <div className="section-title">Connect a model to run queries</div>
         <p className="text-sm text-mute mt-1">
           Pick a provider and paste an API key. It's stored only in this browser tab
-          and sent <strong className="text-white">directly</strong> to the provider —
+          and sent <strong className="text-white">directly</strong> to the provider -
           never to this site's server, and gone when you close the tab.
         </p>
       </div>

@@ -37,7 +37,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (res.status === 429)
-    throw new Error("You're sending requests too quickly — give it a few seconds.");
+    throw new Error("You're sending requests too quickly - give it a few seconds.");
   return res.json() as Promise<T>;
 }
 

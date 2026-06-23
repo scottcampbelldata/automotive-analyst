@@ -1,8 +1,8 @@
-# Deployment Runbook — Automotive Analyst
+# Deployment Runbook - Automotive Analyst
 
 Backend (SQL gateway API) runs on a VPS behind nginx; the frontend is static on
 Cloudflare Pages. The agent reads an existing PostgreSQL warehouse **read-only**
-— it does not create or load any data. **There is no LLM API key on the server**:
+- it does not create or load any data. **There is no LLM API key on the server**:
 visitors bring their own key in the browser, so the server's only secret is the
 read-only database connection.
 
@@ -12,7 +12,7 @@ read-only database connection.
 | API      | VPS + nginx      | https://analyst-api.scottcampbell.io → 127.0.0.1:8010 |
 | Database | VPS PostgreSQL   | read-only role `factory_ro`                       |
 
-Paths below use `/opt/automotive-analyst` and a `deploy` service user — adjust to
+Paths below use `/opt/automotive-analyst` and a `deploy` service user - adjust to
 your host. The API uses loopback port `8010`; pick any free one.
 
 ---
@@ -38,7 +38,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO factory_ro;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO factory_ro;
 SQL
 ```
-This is the second line of defense — even if a client-supplied query slipped past
+This is the second line of defense - even if a client-supplied query slipped past
 the app-level guardrails, the role cannot write.
 
 ## 2. Backend env (no sudo)
@@ -50,7 +50,7 @@ DATABASE_URL=postgresql://factory_ro:STRONG_PASSWORD@localhost:5432/manufacturin
 CORS_ORIGINS=https://analyst.scottcampbell.io,https://automotive-analyst.pages.dev,http://localhost:3000
 ENV
 ```
-Quick foreground test (only the DB role is needed — no LLM key):
+Quick foreground test (only the DB role is needed - no LLM key):
 ```bash
 cd /opt/automotive-analyst/backend
 set -a; source .env; set +a
@@ -80,7 +80,7 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d analyst-api.scottcampbell.io
 curl -s https://analyst-api.scottcampbell.io/health
 ```
-The rate limiter keys on `X-Forwarded-For`, which nginx sets — keep that header.
+The rate limiter keys on `X-Forwarded-For`, which nginx sets - keep that header.
 
 ## 5. Frontend on Cloudflare Pages
 Static Next.js export (`output: "export"`).
@@ -102,7 +102,7 @@ sudo systemctl restart analyst-api
    blanket `pg_*` ban, info-leak function denylist, table/view allow-list
    (fail-closed), comments stripped, injected LIMIT. Attack-case tests in CI.
 2. DB enforcement: dedicated read-only role + read-only transaction + statement
-   timeout — safe even though `/run` accepts client-supplied SQL.
+   timeout - safe even though `/run` accepts client-supplied SQL.
 3. Abuse limits: per-IP rate limiting + request size caps.
 4. Transparency: every answer returns the exact SQL that ran; one self-correction
    round on a database error.
