@@ -1,6 +1,6 @@
 """
 Shared fixtures. The API tests run the real FastAPI app through Starlette's
-TestClient but with the database mocked out — no Postgres needed in CI. The
+TestClient but with the database mocked out - no Postgres needed in CI. The
 guardrails and routing are exercised for real; only the DB boundary is faked.
 """
 import pytest

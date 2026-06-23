@@ -1,5 +1,5 @@
 // Bring-your-own-key storage. The visitor's API key lives ONLY in this browser
-// tab's sessionStorage — it is wiped when the tab closes, never persisted to
+// tab's sessionStorage - it is wiped when the tab closes, never persisted to
 // disk, and never sent to this site's backend. It goes directly to the chosen
 // LLM provider from the browser.
 
@@ -25,7 +25,7 @@ export const DEFAULT_MODEL: Record<Provider, string> = {
 
 // Suggestions shown in the model picker; the field stays free-text so a visitor
 // can use whatever model their key has access to. Text/chat + reasoning models
-// only — no image, audio/voice, video, or embedding models. Pulled from each
+// only - no image, audio/voice, video, or embedding models. Pulled from each
 // provider's live model docs (June 2026), not guessed.
 export const MODEL_SUGGESTIONS: Record<Provider, string[]> = {
   anthropic: [

@@ -1,7 +1,7 @@
-# Automotive Analyst — bring-your-own-key text-to-SQL agent
+# Automotive Analyst - bring-your-own-key text-to-SQL agent
 
 Ask an automotive final-assembly plant's data warehouse a question in plain
-English — *"which station lost the most hours on D-crew last quarter?"* — and your
+English - *"which station lost the most hours on D-crew last quarter?"* - and your
 own LLM writes the PostgreSQL, the server validates it through read-only
 guardrails, runs it, and returns the answer **with the query shown**.
 
@@ -21,12 +21,12 @@ It reads the same warehouse that powers the
 
 Visitors use **their own** Claude, OpenAI, or Gemini API key. The key is held only
 in the browser tab's `sessionStorage` (wiped on close) and is sent **directly** to
-the chosen provider — it never reaches this site's backend. Open DevTools and
+the chosen provider - it never reaches this site's backend. Open DevTools and
 you'll see the key go only to `api.anthropic.com` / `api.openai.com` / Google.
 
 That means the backend has **no LLM secret at all**. Its only job is to be a
 **fail-safe SQL gateway**: it serves the schema grounding, then accepts SQL and
-runs it safely. Accepting client-supplied SQL is fine *by design* — that's exactly
+runs it safely. Accepting client-supplied SQL is fine *by design* - that's exactly
 what the guardrails and the read-only database role are for.
 
 ## Layered safety (the senior signal)
@@ -34,20 +34,20 @@ what the guardrails and the read-only database role are for.
 Letting an LLM write SQL against a real database is where naive implementations
 get dangerous. The safety model is defense-in-depth:
 
-1. **Application guardrails** ([`guardrails.py`](backend/app/agent/guardrails.py)) —
+1. **Application guardrails** ([`guardrails.py`](backend/app/agent/guardrails.py)) -
    single statement only (no `;` chaining), `SELECT`/`WITH` only, no DDL/admin
    keywords, a blanket ban on `pg_*`, a table/view **allow-list** (fail-closed),
    no `SELECT … INTO`, SQL comments stripped before checks, and a `LIMIT` injected
    if missing.
-2. **Database enforcement** — a dedicated **read-only role** (`factory_ro`) inside a
+2. **Database enforcement** - a dedicated **read-only role** (`factory_ro`) inside a
    `READ ONLY` transaction with a statement timeout. Even SQL that somehow slipped
    the app layer cannot write or hang the box.
-3. **Abuse limits** — per-IP rate limiting (correct behind nginx via
+3. **Abuse limits** - per-IP rate limiting (correct behind nginx via
    `X-Forwarded-For`) and request size caps on the public endpoint.
-4. **Transparency** — every response returns the exact SQL and the guardrail
+4. **Transparency** - every response returns the exact SQL and the guardrail
    verdict. If the DB rejects a query, the model gets one self-correction round.
 
-The guardrails ship with a test suite covering real attacks — statement chaining,
+The guardrails ship with a test suite covering real attacks - statement chaining,
 `DELETE`/`DROP`, `pg_read_file`, `pg_user`, `information_schema`, `COPY`
 exfiltration, comment obfuscation, and substring traps (`created_at` must *not*
 trip the write-keyword filter). Writing those tests is what caught a real
@@ -70,7 +70,7 @@ question ─▶ schema ctx ─▶│  generate SQL  ──key──▶  Claude /
 | Frontend | Next.js (static export), Recharts        | Cloudflare Pages    |
 | Backend  | FastAPI, asyncpg                         | VPS + nginx + TLS   |
 | Database | PostgreSQL (shared with the dashboard)   | VPS, read-only role |
-| LLM      | Claude / OpenAI / Gemini — visitor's key | in the browser      |
+| LLM      | Claude / OpenAI / Gemini - visitor's key | in the browser      |
 
 ## Repository layout
 
@@ -120,9 +120,9 @@ Deployment (read-only role, systemd, nginx + TLS, Cloudflare Pages) is in
 
 ## Design highlights
 
-- **Trust boundary** — the backend never holds anyone's key and safely executes
+- **Trust boundary** - the backend never holds anyone's key and safely executes
   even untrusted SQL; the allow-list guardrails plus a read-only role make the
   data store fail-safe.
-- **Provider abstraction** — one interface over three LLMs' differing request/
+- **Provider abstraction** - one interface over three LLMs' differing request/
   response shapes, swappable at runtime.
-- **Tested security** — the guardrail allow-list is covered by attack-case tests in CI.
+- **Tested security** - the guardrail allow-list is covered by attack-case tests in CI.

@@ -126,7 +126,7 @@ export default function Home() {
           <p className="text-mute text-sm mt-1 max-w-2xl">
             Ask the assembly-plant warehouse a question in plain English. Your model
             writes PostgreSQL, the server validates it through read-only guardrails and
-            runs it — and you always see the query behind the answer.
+            runs it - and you always see the query behind the answer.
           </p>
         </div>
         <a href={DASHBOARD_URL} className="badge shrink-0" target="_blank" rel="noreferrer">
@@ -264,7 +264,7 @@ export default function Home() {
         <div className="eyebrow mb-2">How it works</div>
         <div className="grid sm:grid-cols-4 gap-3 text-sm">
           {[
-            ["1 · Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly — never our server."],
+            ["1 · Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly - never our server."],
             ["2 · Generate", "Your model writes one PostgreSQL SELECT, grounded in the star schema served by the API."],
             ["3 · Guardrail", "The server validates it: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
             ["4 · Execute", "Run as a read-only role inside a read-only transaction with a statement timeout. Self-corrects once on error."],

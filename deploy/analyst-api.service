@@ -2,7 +2,7 @@
 # Install: sudo cp deploy/analyst-api.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable --now analyst-api
 # Adjust User/Group and the paths below to your host. Binds to a loopback port
-# (8010) behind nginx. No LLM key here — the only secret is the read-only
+# (8010) behind nginx. No LLM key here - the only secret is the read-only
 # DATABASE_URL in backend/.env, which is git-ignored.
 
 [Unit]

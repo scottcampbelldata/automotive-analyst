@@ -43,7 +43,7 @@ ALLOWED = {
 #       current_setting(), current_user, dblink(), ...). The keyword list below
 #       covers both. A blanket ban on any pg_* identifier catches catalog tables
 #       and admin functions in one rule.
-# NB: `pg_*` must NOT be matched with \b…\b — `_` is a word character, so
+# NB: `pg_*` must NOT be matched with \b…\b - `_` is a word character, so
 # `\bpg_read\b` fails to match `pg_read_file`. We match the whole pg_ token.
 # The read-only DB role is the ultimate backstop; this denylist is the app layer.
 FORBIDDEN = re.compile(

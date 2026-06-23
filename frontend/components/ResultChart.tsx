@@ -350,7 +350,7 @@ export function ResultChart({ res }: { res: RunResponse }) {
 
   const tooManyBars = !isTime && distinctAxis > 30;
 
-  // Case A — series dimension + one measure: one line/bar per series value.
+  // Case A - series dimension + one measure: one line/bar per series value.
   if (seriesCol && measures.length === 1 && !tooManyBars) {
     const seriesKeys = distinctValues(rows, seriesCol);
     if (seriesKeys.length <= 8) {
@@ -369,7 +369,7 @@ export function ResultChart({ res }: { res: RunResponse }) {
     }
   }
 
-  // Case B — series dimension + 2+ measures: small multiples. One mini chart per
+  // Case B - series dimension + 2+ measures: small multiples. One mini chart per
   // series value, all sharing the same axes/scales for honest comparison.
   if (seriesCol && measures.length >= 2 && !tooManyBars) {
     const seriesKeys = distinctValues(rows, seriesCol);
@@ -407,7 +407,7 @@ export function ResultChart({ res }: { res: RunResponse }) {
     }
   }
 
-  // Case C — wide format, one or more measures, no series split. A single chart
+  // Case C - wide format, one or more measures, no series split. A single chart
   // doesn't need a forced left domain (recharts picks rounder ticks on its own);
   // only the secondary axis is zoomed when it's a dual-axis chart.
   if (!seriesCol && measures.length >= 1 && !tooManyBars) {

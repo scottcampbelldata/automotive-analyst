@@ -1,5 +1,5 @@
 """
-Text-to-SQL agent endpoints (Project 2) — the server half of a bring-your-own-key
+Text-to-SQL agent endpoints (Project 2) - the server half of a bring-your-own-key
 design. SQL is generated in the visitor's browser (Claude/OpenAI/Gemini, their
 key); this service never sees a key.
 
@@ -10,7 +10,7 @@ key); this service never sees a key.
 /run accepts client-supplied SQL on purpose: it is validated by the guardrails
 (allow-list, SELECT-only, single statement) and executed as a read-only role
 inside a read-only transaction with a statement timeout. Even a hostile client
-cannot write or escape the allow-list — the design fails safe.
+cannot write or escape the allow-list - the design fails safe.
 """
 import logging
 import time
@@ -60,7 +60,7 @@ async def context():
 async def run(req: RunRequest, request: Request):
     limiter.check(request)  # raises 429 if over the per-IP limit
 
-    # 1. validate (guardrails) — the SQL came from the client; trust nothing.
+    # 1. validate (guardrails) - the SQL came from the client; trust nothing.
     ok, msg, sql = validate_sql(req.sql)
     if not ok:
         log.info("guardrail rejected (%s): %r", msg, req.sql[:200])
