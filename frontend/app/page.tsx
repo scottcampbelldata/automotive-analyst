@@ -5,6 +5,7 @@ import { planQuery, repairSQL, summarizeResult, QueryPlan, SchemaContext } from 
 import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
 import { KeyPanel } from "@/components/KeyPanel";
 import { ResultChart } from "@/components/ResultChart";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const DASHBOARD_URL = "https://factory.scottcampbell.io";
 
@@ -168,7 +169,7 @@ export default function Home() {
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="eyebrow mb-2">Assembly-line analytics &middot; text-to-SQL console</div>
-          <h1 className="font-display text-4xl md:text-5xl font-semibold text-white tracking-tight leading-none">
+          <h1 className="font-display text-4xl md:text-5xl font-semibold text-strong tracking-tight leading-none">
             Automotive Analyst
           </h1>
           <p className="text-mute text-sm mt-3 max-w-2xl leading-relaxed">
@@ -178,9 +179,12 @@ export default function Home() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 shrink-0">
-          <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
-            Factory dashboard &#8599;
-          </a>
+          <div className="flex gap-2">
+            <ThemeToggle />
+            <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
+              Factory dashboard &#8599;
+            </a>
+          </div>
           <span className="badge">
             <span className="dot" /> read-only &middot; live
           </span>
@@ -192,12 +196,12 @@ export default function Home() {
         <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
           <span className="text-mute mono text-xs">
             <span className="text-faint">PROVIDER </span>
-            <span className="text-white">{providerLabel}</span>
+            <span className="text-strong">{providerLabel}</span>
             <span className="text-faint"> &middot; {creds.model}</span>
             <span className="text-good"> &middot; key held in this tab only</span>
           </span>
           <span className="flex gap-3 text-xs">
-            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-white transition-colors">
+            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-strong transition-colors">
               Change key
             </button>
             <button
@@ -295,7 +299,7 @@ export default function Home() {
                     </span>
                   </span>
                 </div>
-                {answer && <p className="text-sm text-[#dce0e8] leading-relaxed">{answer}</p>}
+                {answer && <p className="text-sm text-ink leading-relaxed">{answer}</p>}
                 <ResultChart res={res} />
                 <div className="text-xs text-faint mono">{res.row_count} row(s) returned</div>
               </>
@@ -337,7 +341,7 @@ export default function Home() {
             <div key={n} className="border border-edge rounded-[10px] p-3.5 bg-[var(--panel-2)]">
               <div className="flex items-baseline gap-2 mb-1.5">
                 <span className="font-display text-accent text-lg font-semibold leading-none">{n}</span>
-                <span className="text-white text-xs font-semibold uppercase tracking-wider">{t}</span>
+                <span className="text-strong text-xs font-semibold uppercase tracking-wider">{t}</span>
               </div>
               <div className="text-mute text-xs leading-relaxed">{d}</div>
             </div>

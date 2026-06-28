@@ -44,7 +44,7 @@ export function KeyPanel({
         <div className="section-title">Connect a model to run queries</div>
         <p className="text-sm text-mute mt-1">
           Pick a provider and paste an API key. It's stored only in this browser tab
-          and sent <strong className="text-white">directly</strong> to the provider -
+          and sent <strong className="text-strong">directly</strong> to the provider -
           never to this site's server, and gone when you close the tab.
         </p>
       </div>
@@ -56,8 +56,8 @@ export function KeyPanel({
             onClick={() => pickProvider(p.id)}
             className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
               provider === p.id
-                ? "border-accent text-white bg-[var(--panel-2)]"
-                : "border-edge text-mute hover:text-white"
+                ? "border-accent text-strong bg-[var(--panel-2)]"
+                : "border-edge text-mute hover:text-strong"
             }`}
           >
             {p.label}
@@ -110,7 +110,7 @@ export function KeyPanel({
         {onCancel && (
           <button
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-lg border border-edge text-mute text-sm hover:text-white transition-colors"
+            className="px-5 py-2.5 rounded-lg border border-edge text-mute text-sm hover:text-strong transition-colors"
           >
             Cancel
           </button>

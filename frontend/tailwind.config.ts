@@ -5,16 +5,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#eceef2",
-        panel: "#1a1d22",
-        "panel-2": "#141619",
-        edge: "#2a2e36",
-        accent: "#f3b13c", // backlit-gauge amber (brand)
-        good: "#38c890", // andon green
-        warn: "#f0b429", // andon amber
-        bad: "#e5544b", // andon red
-        mute: "#9a9ea8",
-        faint: "#646872",
+        // All colors are theme tokens defined in globals.css (:root = light,
+        // [data-theme="dark"] = dark). Utilities like text-mute/border-edge
+        // follow the active theme automatically.
+        ink: "var(--ink)",
+        strong: "var(--strong)", // headings / values (near-black on paper, white in dark)
+        panel: "var(--panel)",
+        "panel-2": "var(--panel-2)",
+        edge: "var(--edge)",
+        accent: "var(--signal)", // brand amber, deepened on paper
+        good: "var(--good)", // andon green
+        warn: "var(--warn)", // andon amber
+        bad: "var(--bad)", // andon red
+        mute: "var(--mute)",
+        faint: "var(--faint)",
       },
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
