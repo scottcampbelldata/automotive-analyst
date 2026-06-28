@@ -65,32 +65,32 @@ export function KeyPanel({
         ))}
       </div>
 
-      <div className="space-y-1">
-        <label className="text-xs text-faint uppercase tracking-wider">API key</label>
+      <div className="space-y-1.5">
+        <label className="text-[0.62rem] text-faint mono uppercase tracking-[0.13em]">API key</label>
         <input
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && save()}
-          placeholder={provider === "gemini" ? "AIza…" : provider === "openai" ? "sk-…" : "sk-ant-…"}
+          placeholder={provider === "gemini" ? "AIza..." : provider === "openai" ? "sk-..." : "sk-ant-..."}
           autoComplete="off"
-          className="w-full bg-[var(--panel-2)] border border-edge rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-faint outline-none focus:border-accent"
+          className="field mono"
         />
         <div className="text-xs text-faint">
           Need one?{" "}
           <a href={keysUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">
-            Get a {PROVIDERS.find((p) => p.id === provider)!.label} key ↗
+            Get a {PROVIDERS.find((p) => p.id === provider)!.label} key &#8599;
           </a>
         </div>
       </div>
 
-      <div className="space-y-1">
-        <label className="text-xs text-faint uppercase tracking-wider">Model</label>
+      <div className="space-y-1.5">
+        <label className="text-[0.62rem] text-faint mono uppercase tracking-[0.13em]">Model</label>
         <input
           list={`models-${provider}`}
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          className="w-full bg-[var(--panel-2)] border border-edge rounded-lg px-4 py-2.5 text-sm text-white outline-none focus:border-accent"
+          className="field mono"
         />
         <datalist id={`models-${provider}`}>
           {MODEL_SUGGESTIONS[provider].map((m) => (
@@ -103,14 +103,14 @@ export function KeyPanel({
         <button
           onClick={save}
           disabled={!key.trim()}
-          className="px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-50"
+          className="btn-primary px-5 py-2.5 text-sm"
         >
           Save key
         </button>
         {onCancel && (
           <button
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-lg border border-edge text-mute text-sm hover:text-white"
+            className="px-5 py-2.5 rounded-lg border border-edge text-mute text-sm hover:text-white transition-colors"
           >
             Cancel
           </button>

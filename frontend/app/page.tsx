@@ -9,6 +9,16 @@ import { ResultChart } from "@/components/ResultChart";
 const DASHBOARD_URL = "https://factory.scottcampbell.io";
 
 type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
+type Lamp = "off" | "amber" | "green" | "red";
+
+// Shown when the API's sample list is unreachable (e.g. backend offline) so the
+// console is never an empty prompt. Replaced by server samples once they load.
+const FALLBACK_SAMPLES = [
+  "Which station lost the most hours on D-crew last quarter?",
+  "Top 5 defect types by count this year",
+  "Daily throughput trend for the body shop",
+  "Average downtime per shift by crew",
+];
 
 const PHASE_LABEL: Record<Phase, string> = {
   idle: "",
@@ -17,6 +27,41 @@ const PHASE_LABEL: Record<Phase, string> = {
   repairing: "Query failed - asking the model to fix it...",
   summarizing: "Writing the answer from the result rows...",
 };
+
+/** Map the live pipeline state onto andon lamps. */
+function andonLamps(phase: Phase, res: RunResponse | null) {
+  let gen: Lamp = "off", guard: Lamp = "off", exec: Lamp = "off";
+  if (phase === "planning") {
+    gen = "amber";
+  } else if (phase === "running") {
+    gen = "green"; guard = "green"; exec = "amber";
+  } else if (phase === "repairing") {
+    gen = "green"; guard = "green"; exec = "red";
+  } else if (phase === "summarizing") {
+    gen = "green"; guard = "green"; exec = "green";
+  } else if (res) {
+    if (res.ok) {
+      gen = "green"; guard = "green"; exec = "green";
+    } else if (res.stage === "guardrail") {
+      gen = "green"; guard = "red";
+    } else if (res.stage === "execute") {
+      gen = "green"; guard = "green"; exec = "red";
+    } else {
+      gen = "red";
+    }
+  }
+  return { gen, guard, exec };
+}
+
+function AndonSeg({ name, lamp, pulse }: { name: string; lamp: Lamp; pulse?: boolean }) {
+  const live = lamp !== "off";
+  return (
+    <div className={`andon-seg${live ? " is-live" : ""}`}>
+      <span className={`lamp ${lamp}${pulse ? " pulse" : ""}`} />
+      <span className="andon-name">{name}</span>
+    </div>
+  );
+}
 
 export default function Home() {
   const [creds, setCreds] = useState<Creds | null>(null);
@@ -36,6 +81,8 @@ export default function Home() {
 
   const loading = phase !== "idle";
   const providerLabel = creds ? PROVIDERS.find((p) => p.id === creds.provider)?.label : null;
+  const { gen, guard, exec } = andonLamps(phase, res);
+  const showRepair = phase === "repairing" || repaired;
 
   useEffect(() => {
     setCreds(loadCreds());
@@ -116,39 +163,46 @@ export default function Home() {
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 md:p-8 space-y-6">
-      <header className="flex items-end justify-between gap-3">
+    <main className="max-w-5xl mx-auto p-6 md:p-8 space-y-5">
+      {/* Control-console header */}
+      <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="eyebrow mb-1">Natural-language analytics · text-to-SQL</div>
-          <h1 className="text-2xl md:text-3xl font-semibold text-white tracking-tight">
+          <div className="eyebrow mb-2">Assembly-line analytics &middot; text-to-SQL console</div>
+          <h1 className="font-display text-4xl md:text-5xl font-semibold text-white tracking-tight leading-none">
             Automotive Analyst
           </h1>
-          <p className="text-mute text-sm mt-1 max-w-2xl">
+          <p className="text-mute text-sm mt-3 max-w-2xl leading-relaxed">
             Ask the assembly-plant warehouse a question in plain English. Your model
             writes PostgreSQL, the server validates it through read-only guardrails and
-            runs it - and you always see the query behind the answer.
+            runs it, and you always see the query behind the answer.
           </p>
         </div>
-        <a href={DASHBOARD_URL} className="badge shrink-0" target="_blank" rel="noreferrer">
-          Dashboard ↗
-        </a>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
+            Factory dashboard &#8599;
+          </a>
+          <span className="badge">
+            <span className="dot" /> read-only &middot; live
+          </span>
+        </div>
       </header>
 
       {/* Key status / management */}
       {creds && !editingKey && (
         <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
-          <span className="text-mute">
-            Using <span className="text-white">{providerLabel}</span>
-            <span className="text-faint"> · {creds.model}</span>
-            <span className="text-good"> · key in this tab only</span>
+          <span className="text-mute mono text-xs">
+            <span className="text-faint">PROVIDER </span>
+            <span className="text-white">{providerLabel}</span>
+            <span className="text-faint"> &middot; {creds.model}</span>
+            <span className="text-good"> &middot; key held in this tab only</span>
           </span>
-          <span className="flex gap-3">
-            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-white">
+          <span className="flex gap-3 text-xs">
+            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-white transition-colors">
               Change key
             </button>
             <button
               onClick={() => { clearCreds(); setCreds(null); }}
-              className="text-mute hover:text-accent"
+              className="text-mute hover:text-bad transition-colors"
             >
               Clear
             </button>
@@ -164,49 +218,61 @@ export default function Home() {
         />
       )}
 
-      {/* Ask box */}
-      <div className="card">
+      {/* Ask console */}
+      <div className="card space-y-4">
         <div className="flex gap-2">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run(q)}
             placeholder="e.g. which station lost the most hours on D-crew last quarter?"
-            className="flex-1 bg-[var(--panel-2)] border border-edge rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-faint outline-none focus:border-accent"
+            className="field flex-1"
           />
           <button
             onClick={() => run(q)}
             disabled={loading}
-            className="px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-50"
+            className="btn-primary px-5 text-sm whitespace-nowrap"
           >
-            {loading ? "Working…" : creds ? "Ask" : "Add key"}
+            {loading ? "Working..." : creds ? "Run query" : "Add key"}
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 mt-3">
-          {samples.map((s) => (
-            <button
-              key={s}
-              onClick={() => run(s)}
-              disabled={loading}
-              className="text-xs text-mute border border-edge rounded-full px-3 py-1 hover:border-accent hover:text-white transition-colors disabled:opacity-40"
-            >
+
+        <div className="flex flex-wrap gap-2">
+          {(samples.length ? samples : FALLBACK_SAMPLES).map((s) => (
+            <button key={s} onClick={() => run(s)} disabled={loading} className="chip">
               {s}
             </button>
           ))}
         </div>
-        {loading && <div className="text-xs text-faint mt-3">{PHASE_LABEL[phase]}</div>}
+
+        {/* Andon rail - lights up as the pipeline runs */}
+        <div>
+          <div className="andon">
+            <AndonSeg name="Generate" lamp={gen} pulse={phase === "planning"} />
+            <AndonSeg name="Guardrail" lamp={guard} />
+            <AndonSeg name="Execute" lamp={exec} pulse={phase === "running"} />
+            {showRepair && (
+              <AndonSeg
+                name="Self-correct"
+                lamp={phase === "repairing" ? "amber" : "green"}
+                pulse={phase === "repairing"}
+              />
+            )}
+          </div>
+          {loading && <div className="text-xs text-faint mono mt-2">{PHASE_LABEL[phase]}</div>}
+        </div>
       </div>
 
       {err && (
         <div className="card">
-          <div className="text-accent font-medium mb-1">Couldn&apos;t complete the request</div>
+          <div className="text-bad font-medium mb-1">Couldn&apos;t complete the request</div>
           <p className="text-sm text-mute">{err}</p>
         </div>
       )}
 
       {notEnoughData && (
         <div className="card">
-          <div className="text-accent font-medium mb-1">Not enough data in this warehouse</div>
+          <div className="text-warn font-medium mb-1">Not enough data in this warehouse</div>
           <p className="text-sm text-mute">{notEnoughData}</p>
         </div>
       )}
@@ -220,22 +286,22 @@ export default function Home() {
                   <div className="section-title">Answer</div>
                   <span className="flex gap-2">
                     {repaired && (
-                      <span className="text-xs text-mute border border-edge rounded-full px-2.5 py-0.5">
-                        self-corrected ↻
+                      <span className="badge" style={{ color: "var(--warn)" }}>
+                        <span className="lamp amber" style={{ boxShadow: "none" }} /> self-corrected
                       </span>
                     )}
-                    <span className="text-xs text-good border border-good/40 rounded-full px-2.5 py-0.5">
-                      guardrail: {res.guardrail}
+                    <span className="badge" style={{ color: "var(--good)" }}>
+                      <span className="lamp green" style={{ boxShadow: "none" }} /> guardrail: {res.guardrail}
                     </span>
                   </span>
                 </div>
-                {answer && <p className="text-sm text-[#dce6f7] leading-relaxed">{answer}</p>}
+                {answer && <p className="text-sm text-[#dce0e8] leading-relaxed">{answer}</p>}
                 <ResultChart res={res} />
-                <div className="text-xs text-faint">{res.row_count} row(s)</div>
+                <div className="text-xs text-faint mono">{res.row_count} row(s) returned</div>
               </>
             ) : (
               <div>
-                <div className="text-accent font-medium mb-1">
+                <div className="text-bad font-medium mb-1">
                   {res.stage === "guardrail"
                     ? "Query blocked by guardrails"
                     : `Could not answer (${res.stage})`}
@@ -246,41 +312,43 @@ export default function Home() {
 
           {genSql && (
             <div>
-              <div className="text-xs text-faint uppercase tracking-wider mb-1.5">
+              <div className="eyebrow mb-2" style={{ color: "var(--faint)" }}>
                 Generated SQL{providerLabel ? ` · ${providerLabel}` : ""}
               </div>
               {plan?.reason && res?.ok && (
                 <div className="text-xs text-faint mb-2">{plan.reason}</div>
               )}
-              <pre className="bg-[var(--panel-2)] border border-edge rounded-lg p-3 text-xs text-[#cdd7ea] overflow-auto whitespace-pre-wrap">
-                {genSql}
-              </pre>
+              <pre className="sql">{genSql}</pre>
             </div>
           )}
         </div>
       )}
 
+      {/* How it works - a real four-station sequence */}
       <div className="card">
-        <div className="eyebrow mb-2">How it works</div>
+        <div className="eyebrow mb-3">Line sequence &middot; how a question becomes an answer</div>
         <div className="grid sm:grid-cols-4 gap-3 text-sm">
           {[
-            ["1 · Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly - never our server."],
-            ["2 · Generate", "Your model writes one PostgreSQL SELECT, grounded in the star schema served by the API."],
-            ["3 · Guardrail", "The server validates it: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
-            ["4 · Execute", "Run as a read-only role inside a read-only transaction with a statement timeout. Self-corrects once on error."],
-          ].map(([t, d]) => (
-            <div key={t} className="border border-edge rounded-lg p-3">
-              <div className="text-accent text-xs font-semibold mb-1">{t}</div>
+            ["01", "Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly, never our server."],
+            ["02", "Generate", "Your model writes one PostgreSQL SELECT, grounded in the star schema served by the API."],
+            ["03", "Guardrail", "The server validates it: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
+            ["04", "Execute", "Run as a read-only role inside a read-only transaction with a statement timeout. Self-corrects once on error."],
+          ].map(([n, t, d]) => (
+            <div key={n} className="border border-edge rounded-[10px] p-3.5 bg-[var(--panel-2)]">
+              <div className="flex items-baseline gap-2 mb-1.5">
+                <span className="font-display text-accent text-lg font-semibold leading-none">{n}</span>
+                <span className="text-white text-xs font-semibold uppercase tracking-wider">{t}</span>
+              </div>
               <div className="text-mute text-xs leading-relaxed">{d}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <footer className="text-xs text-faint pt-4 border-t border-edge">
-        Built by Scott Campbell · FastAPI · PostgreSQL · Next.js · Recharts. Bring-your-own-key
-        (Claude / OpenAI / Gemini); the key never touches the server. Reads the same warehouse as
-        the dashboard, read-only. Data is fully synthetic; no proprietary or employer data.
+      <footer className="text-xs text-faint mono pt-4 border-t border-edge leading-relaxed">
+        Built by Scott Campbell &middot; FastAPI &middot; PostgreSQL &middot; Next.js &middot; Recharts.
+        Bring-your-own-key (Claude / OpenAI / Gemini); the key never touches the server. Reads the same
+        warehouse as the dashboard, read-only. Data is fully synthetic; no proprietary or employer data.
       </footer>
     </main>
   );

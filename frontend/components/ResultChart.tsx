@@ -26,11 +26,17 @@ import { RunResponse } from "@/lib/api";
 
 type Row = Record<string, string | number | null>;
 
-const AXIS = { fill: "#8896b4", fontSize: 12 };
-const TIP = { background: "#0a0e1a", border: "1px solid #1f2a44", borderRadius: 8 };
-const GRID = "#1f2a44";
-// Accent first, then a colorblind-friendly spread for multi-series.
-const PALETTE = ["#e0653f", "#5b9bd5", "#6fcf97", "#f2c94c", "#bb6bd9", "#56ccf2", "#eb5757", "#88d8b0"];
+const AXIS = { fill: "#9a9ea8", fontSize: 12, fontFamily: "var(--font-mono)" };
+const TIP = {
+  background: "#1a1d22",
+  border: "1px solid #2a2e36",
+  borderRadius: 9,
+  fontSize: 12,
+  fontFamily: "var(--font-mono)",
+};
+const GRID = "#2a2e36";
+// Brand amber first, then a colorblind-friendly spread for multi-series.
+const PALETTE = ["#f3b13c", "#5b9bd5", "#38c890", "#bb6bd9", "#56ccf2", "#e5544b", "#88d8b0", "#c9d05b"];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -199,7 +205,7 @@ function MeasureChart({
         formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
         // Default cursor is a bright grey block that fights the dark theme;
         // use a faint highlight (soft line for time, soft fill for bars).
-        cursor={isTime ? { stroke: "#3b4a6b" } : { fill: "rgba(136,150,180,0.10)" }}
+        cursor={isTime ? { stroke: "#393e48" } : { fill: "rgba(243,177,60,0.06)" }}
       />
       {showLegend && <Legend formatter={humanizeKey} wrapperStyle={{ fontSize: 12 }} />}
     </>
