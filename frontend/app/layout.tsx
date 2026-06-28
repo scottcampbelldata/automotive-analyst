@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { Saira_Semi_Condensed, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/lib/theme";
+
+// Applied before paint to avoid a flash of the wrong theme. Light is the
+// default; only a stored "dark" choice overrides it.
+const NO_FLASH = `(function(){try{var t=localStorage.getItem('aa-theme');document.documentElement.dataset.theme=(t==='dark'||t==='light')?t:'light';}catch(e){document.documentElement.dataset.theme='light';}})();`;
 
 const display = Saira_Semi_Condensed({
   subsets: ["latin"],
@@ -30,8 +35,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
-      <body className="antialiased">{children}</body>
+    <html
+      lang="en"
+      data-theme="light"
+      suppressHydrationWarning
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH }} />
+      </head>
+      <body className="antialiased">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

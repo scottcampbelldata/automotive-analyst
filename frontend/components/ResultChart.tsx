@@ -23,20 +23,45 @@ import {
   Legend,
 } from "recharts";
 import { RunResponse } from "@/lib/api";
+import { Theme, useTheme } from "@/lib/theme";
 
 type Row = Record<string, string | number | null>;
 
-const AXIS = { fill: "#9a9ea8", fontSize: 12, fontFamily: "var(--font-mono)" };
-const TIP = {
-  background: "#1a1d22",
-  border: "1px solid #2a2e36",
-  borderRadius: 9,
-  fontSize: 12,
-  fontFamily: "var(--font-mono)",
+// Recharts paints SVG via JS props, not CSS classes, so the chart palette can't
+// ride on the CSS theme tokens - it mirrors them here, keyed by theme. Brand
+// amber first (deepened on paper for contrast), then a colorblind-friendly
+// spread for multi-series.
+const CHART: Record<Theme, {
+  axis: string;
+  grid: string;
+  tipBg: string;
+  tipBorder: string;
+  tipText: string;
+  cursorLine: string;
+  cursorFill: string;
+  palette: string[];
+}> = {
+  light: {
+    axis: "#61656d",
+    grid: "#e4ded2",
+    tipBg: "#ffffff",
+    tipBorder: "#e4ded2",
+    tipText: "#15171b",
+    cursorLine: "#cfc7b8",
+    cursorFill: "rgba(168,106,18,0.07)",
+    palette: ["#c07d12", "#3b7fc4", "#15935f", "#9a51c4", "#2a8fd0", "#c4382e", "#3f9b7c", "#8a8f1a"],
+  },
+  dark: {
+    axis: "#9a9ea8",
+    grid: "#2a2e36",
+    tipBg: "#1a1d22",
+    tipBorder: "#2a2e36",
+    tipText: "#eceef2",
+    cursorLine: "#393e48",
+    cursorFill: "rgba(243,177,60,0.06)",
+    palette: ["#f3b13c", "#5b9bd5", "#38c890", "#bb6bd9", "#56ccf2", "#e5544b", "#88d8b0", "#c9d05b"],
+  },
 };
-const GRID = "#2a2e36";
-// Brand amber first, then a colorblind-friendly spread for multi-series.
-const PALETTE = ["#f3b13c", "#5b9bd5", "#38c890", "#bb6bd9", "#56ccf2", "#e5544b", "#88d8b0", "#c9d05b"];
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -179,10 +204,21 @@ function MeasureChart({
   height: number;
   showLegend: boolean;
 }) {
+  const { theme } = useTheme();
+  const c = CHART[theme];
+  const AXIS = { fill: c.axis, fontSize: 12, fontFamily: "var(--font-mono)" };
+  const TIP = {
+    background: c.tipBg,
+    border: `1px solid ${c.tipBorder}`,
+    borderRadius: 9,
+    fontSize: 12,
+    fontFamily: "var(--font-mono)",
+    color: c.tipText,
+  };
   const hasRight = Boolean(rightKey);
   const axes = (
     <>
-      <CartesianGrid stroke={GRID} vertical={false} />
+      <CartesianGrid stroke={c.grid} vertical={false} />
       <XAxis
         dataKey={axisCol}
         tick={AXIS}
@@ -203,9 +239,9 @@ function MeasureChart({
         contentStyle={TIP}
         labelFormatter={formatLabel}
         formatter={(value, name) => [formatValue(value), humanizeKey(name)]}
-        // Default cursor is a bright grey block that fights the dark theme;
-        // use a faint highlight (soft line for time, soft fill for bars).
-        cursor={isTime ? { stroke: "#393e48" } : { fill: "rgba(243,177,60,0.06)" }}
+        // Default cursor is a bright grey block that fights the theme; use a
+        // faint highlight (soft line for time, soft fill for bars).
+        cursor={isTime ? { stroke: c.cursorLine } : { fill: c.cursorFill }}
       />
       {showLegend && <Legend formatter={humanizeKey} wrapperStyle={{ fontSize: 12 }} />}
     </>
@@ -221,7 +257,7 @@ function MeasureChart({
               key={k}
               yAxisId={k === rightKey ? "right" : "left"}
               dataKey={k}
-              stroke={PALETTE[i % PALETTE.length]}
+              stroke={c.palette[i % c.palette.length]}
               strokeWidth={2}
               dot={{ r: 2 }}
               connectNulls
@@ -236,7 +272,7 @@ function MeasureChart({
               key={k}
               yAxisId={k === rightKey ? "right" : "left"}
               dataKey={k}
-              fill={PALETTE[i % PALETTE.length]}
+              fill={c.palette[i % c.palette.length]}
               radius={[4, 4, 0, 0]}
             />
           ))}
@@ -251,6 +287,8 @@ function MeasureChart({
 function LegendChips({ keys }: { keys: string[] }) {
   // Inline styles (not Tailwind classes) so the swatches and spacing render
   // reliably regardless of the build's class generation.
+  const { theme } = useTheme();
+  const palette = CHART[theme].palette;
   return (
     <div
       className="mb-3 text-xs text-mute"
@@ -266,7 +304,7 @@ function LegendChips({ keys }: { keys: string[] }) {
               borderRadius: 9999,
               flexShrink: 0,
               marginRight: 8,
-              background: PALETTE[i % PALETTE.length],
+              background: palette[i % palette.length],
             }}
           />
           <span>{humanizeKey(k)}</span>
