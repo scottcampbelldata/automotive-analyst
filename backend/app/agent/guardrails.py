@@ -47,24 +47,72 @@ ALLOWED = {
 # `\bpg_read\b` fails to match `pg_read_file`. We match the whole pg_ token.
 # The read-only DB role is the ultimate backstop; this denylist is the app layer.
 FORBIDDEN = re.compile(
-    # (a) write / DDL / admin statements
+    # (a) write / DDL / admin statements -- banned as bare words
     r'\b(insert|update|delete|drop|alter|truncate|grant|revoke|merge|call|copy|'
     r'vacuum|reindex|cluster|lock|begin|commit|rollback|reset|execute|prepare|'
     r'listen|notify|create|comment|do|'
-    # (b) server / identity info-leak & cross-DB functions
-    r'current_setting|set_config|current_user|session_user|current_database|'
-    r'current_catalog|current_schema|version|inet_server_addr|inet_client_addr|'
-    r'inet_server_port|inet_client_port|dblink|dblink_exec|dblink_connect|'
-    r'txid_current|lo_import|lo_export|lo_read|lo_get)\b'
+    # (b) identity keywords that are legal *without* parentheses in Postgres,
+    #     so they have to be banned bare too
+    r'current_user|session_user|current_database|current_catalog|current_schema)\b'
     # any pg_* identifier (catalogs + admin funcs)
     r'|\bpg_\w+',
     re.I,
 )
 
-# FROM/JOIN <optional schema.>identifier  -> capture the object name only.
-_RELATION = re.compile(r'\b(?:from|join)\s+(?:[a-z_]\w*\.)?([a-z_]\w*)', re.I)
+# (c) admin / info-leak *functions*. These are only dangerous when invoked, so
+# they are matched with a following "(" -- otherwise a perfectly ordinary column
+# named `version` gets the whole query rejected.
+FORBIDDEN_CALL = re.compile(
+    r'\b(current_setting|set_config|version|inet_server_addr|inet_client_addr|'
+    r'inet_server_port|inet_client_port|dblink|dblink_exec|dblink_connect|'
+    r'txid_current|lo_import|lo_export|lo_read|lo_get)\s*\(',
+    re.I,
+)
+
+# FROM/JOIN <optional schema.>identifier -> capture the object name.
+# Quoted identifiers must be matched here: Postgres accepts FROM "users", and a
+# pattern restricted to [a-z_] simply fails to match it, which meant the
+# allow-list below was skipped entirely rather than failing closed.
+_RELATION = re.compile(
+    r'\b(?:from|join)\s+'
+    r'(?:(?:"[^"]+"|[a-z_]\w*)\s*\.\s*)?'   # optional schema, quoted or bare
+    r'("[^"]+"|[a-z_]\w*)',                 # object, quoted or bare
+    re.I,
+)
+# Every FROM/JOIN that introduces a relation, so unparsed ones can be counted.
+_FROM_JOIN = re.compile(r'\b(?:from|join)\b', re.I)
+# FROM/JOIN followed by a subquery or a VALUES list, which have no object name.
+_FROM_PAREN = re.compile(r'\b(?:from|join)\s*\(', re.I)
 # CTE names introduced by `WITH x AS (` or `, x AS (`.
-_CTE = re.compile(r'(?:with|,)\s+([a-z_]\w*)\s+as\s*\(', re.I)
+_CTE = re.compile(r'(?:with|,)\s+("[^"]+"|[a-z_]\w*)\s+as\s*\(', re.I)
+
+# SQL string literals, with '' as the escape for a literal quote. Contents are
+# data and can never execute, so they are masked before keyword scanning.
+_STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
+# Dollar quoting ($$...$$ / $tag$...$tag$) has no place in an analytical SELECT
+# and is a standard way to smuggle a payload past a scanner, so it is rejected.
+_DOLLAR_QUOTE = re.compile(r'\$[a-z_]*\$', re.I)
+# FUNC( ... FROM ... ) idioms where FROM is an argument separator, not a source.
+_FROM_IDIOM = re.compile(
+    r'\b(extract|substring|position|overlay|trim)\s*\(([^()]*)\)', re.I)
+
+
+def _normalize_relation(name: str) -> str:
+    """Fold a captured relation name to its comparable form."""
+    name = name.strip()
+    if name.startswith('"') and name.endswith('"'):
+        name = name[1:-1]
+    return name.strip().lower()
+
+
+def _mask_literals(s: str) -> str:
+    """Blank the contents of string literals so keyword scanning sees only code."""
+    return _STRING_LITERAL.sub("''", s)
+
+
+def _mask_from_idioms(s: str) -> str:
+    """Blank FROM inside EXTRACT()/SUBSTRING()-style calls, where it is not a source."""
+    return _FROM_IDIOM.sub(lambda m: m.group(0).replace('from', ' ').replace('FROM', ' '), s)
 
 _LINE_COMMENT = re.compile(r'--[^\n]*')
 _BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
@@ -95,24 +143,46 @@ def validate_sql(raw: str):
 
     if not s:
         return False, "empty query", None
-    if ';' in s:
+    # Statement separation is checked against a literal-masked copy: a semicolon
+    # inside a string is data and cannot terminate a statement, so
+    # SELECT 'a; b' is a single statement and must not be refused.
+    if ';' in _mask_literals(s):
         return False, "only a single statement is allowed", None
 
     low = s.lower()
     if not (low.startswith('select') or low.startswith('with')):
         return False, "only read-only SELECT queries are allowed", None
-    if FORBIDDEN.search(low):
+    if _DOLLAR_QUOTE.search(s):
+        return False, "dollar-quoted strings are not allowed", None
+
+    # Keyword scanning runs against a copy with string-literal contents blanked.
+    # The literals are data; without this, SELECT 'drop' AS label is rejected.
+    scan = _mask_literals(low)
+    if FORBIDDEN.search(scan):
         return False, "query contains a forbidden keyword (write / DDL / admin)", None
-    if re.search(r'\bselect\b.*\binto\b', low, re.S):
+    if FORBIDDEN_CALL.search(scan):
+        return False, "query calls a forbidden function (server / identity info)", None
+    if re.search(r'\bselect\b.*\binto\b', scan, re.S):
         return False, "SELECT INTO is not allowed", None
     if _INCOMPLETE_TAIL.search(s):
         return False, "query appears incomplete", None
 
-    ctes = {m.lower() for m in _CTE.findall(low)}
-    rels = [m.lower() for m in _RELATION.findall(low)]
+    # Relations are read from the masked copy too, so a table name inside a
+    # string literal cannot be mistaken for a source.
+    rel_scan = _mask_from_idioms(scan)
+    ctes = {_normalize_relation(m) for m in _CTE.findall(rel_scan)}
+    rels = [_normalize_relation(m) for m in _RELATION.findall(rel_scan)]
     unknown = [r for r in rels if r not in ALLOWED and r not in ctes]
     if unknown:
         return False, f"unknown table/view: {', '.join(sorted(set(unknown)))}", None
+
+    # Fail closed: every FROM/JOIN must have been accounted for, either as a
+    # named relation or as a parenthesised subquery. If the parser could not
+    # classify one, the allow-list has a hole and the query is refused rather
+    # than passed through on an empty match set.
+    accounted = len(rels) + len(_FROM_PAREN.findall(rel_scan))
+    if len(_FROM_JOIN.findall(rel_scan)) > accounted:
+        return False, "could not parse every FROM/JOIN source", None
 
     if not re.search(r'\blimit\s+\d+', low):
         s = s + f"\nLIMIT {DEFAULT_LIMIT}"
