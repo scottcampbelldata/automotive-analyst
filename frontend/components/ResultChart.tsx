@@ -181,6 +181,23 @@ function measureScale(rows: Row[], measures: string[]): Scale {
   return { rightKey, leftDomain, rightDomain };
 }
 
+// Recharts 2.x can't auto-size a Y axis, and its fixed 60px default clips wide
+// tick labels ("100,000" renders as "L00,000"). Size the axis from the widest
+// label it will have to draw: the explicit domain when one is set (small
+// multiples share a scale, so a quiet facet still needs the group's width),
+// otherwise the largest value in the data. One extra char of slack covers
+// recharts rounding the top tick up past the data max.
+const CHAR_PX = 7.2; // 12px monospace
+const TICK_PX = 14; // tick mark + label padding
+
+function axisWidth(data: Row[], keys: string[], domain?: [number, number]): number {
+  const widest = domain
+    ? Math.max(Math.abs(domain[0]), Math.abs(domain[1]))
+    : Math.max(...data.flatMap((r) => keys.map((k) => Math.abs(Number(r[k])) || 0)), 0);
+  const chars = formatValue(widest).length + 1;
+  return Math.min(96, Math.max(44, Math.ceil(chars * CHAR_PX + TICK_PX)));
+}
+
 // The single chart primitive. `keys` are the dataKeys to draw (measure columns,
 // or pivoted series values). Time axes draw lines; categorical axes draw bars.
 function MeasureChart({
@@ -216,6 +233,13 @@ function MeasureChart({
     color: c.tipText,
   };
   const hasRight = Boolean(rightKey);
+  const leftWidth = axisWidth(data, keys.filter((k) => k !== rightKey), leftDomain);
+  const rightWidth = rightKey ? axisWidth(data, [rightKey], rightDomain) : 0;
+  // On a time axis the last point sits on the right edge of the plot and its
+  // label is centred there, so half of it hangs into the margin. Reserve that
+  // half; a right Y axis already provides the room.
+  const lastLabel = isTime ? formatLabel(data[data.length - 1]?.[axisCol]) : "";
+  const rightMargin = hasRight ? 8 : Math.max(16, Math.ceil((lastLabel.length * CHAR_PX) / 2));
   const axes = (
     <>
       <CartesianGrid stroke={c.grid} vertical={false} />
@@ -225,11 +249,18 @@ function MeasureChart({
         tickFormatter={formatLabel}
         {...(isTime ? {} : { angle: -20, textAnchor: "end" as const, interval: 0 })}
       />
-      <YAxis yAxisId="left" tick={AXIS} tickFormatter={formatValue} domain={leftDomain} />
+      <YAxis
+        yAxisId="left"
+        width={leftWidth}
+        tick={AXIS}
+        tickFormatter={formatValue}
+        domain={leftDomain}
+      />
       {hasRight && (
         <YAxis
           yAxisId="right"
           orientation="right"
+          width={rightWidth}
           tick={AXIS}
           tickFormatter={formatValue}
           domain={rightDomain}
@@ -250,7 +281,7 @@ function MeasureChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       {isTime ? (
-        <LineChart data={data} margin={{ top: 8, right: hasRight ? 8 : 16, left: -6, bottom: 24 }}>
+        <LineChart data={data} margin={{ top: 8, right: rightMargin, left: 0, bottom: 24 }}>
           {axes}
           {keys.map((k, i) => (
             <Line
@@ -265,7 +296,7 @@ function MeasureChart({
           ))}
         </LineChart>
       ) : (
-        <BarChart data={data} margin={{ top: 8, right: hasRight ? 8 : 16, left: -6, bottom: 44 }}>
+        <BarChart data={data} margin={{ top: 8, right: rightMargin, left: 0, bottom: 44 }}>
           {axes}
           {keys.map((k, i) => (
             <Bar
@@ -454,7 +485,12 @@ export function ResultChart({ res }: { res: RunResponse }) {
   // Case C - wide format, one or more measures, no series split. A single chart
   // doesn't need a forced left domain (recharts picks rounder ticks on its own);
   // only the secondary axis is zoomed when it's a dual-axis chart.
-  if (!seriesCol && measures.length >= 1 && !tooManyBars) {
+  //
+  // `!longFormat` is load-bearing: long format with no series split means two
+  // grouping dimensions the chart can't express (e.g. GROUP BY root_cause_station,
+  // detected_station), so the axis value repeats and one category renders as
+  // several identical-looking bars. A table is the honest rendering there.
+  if (!seriesCol && !longFormat && measures.length >= 1 && !tooManyBars) {
     const scale = measureScale(rows, measures);
     const data = isTime ? [...rows].sort(byDate(axisCol)) : rows;
     return (
