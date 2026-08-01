@@ -1,9 +1,10 @@
 # systemd unit for the Automotive Analyst API (text-to-SQL gateway).
 # Install: sudo cp deploy/analyst-api.service /etc/systemd/system/
 #          sudo systemctl daemon-reload && sudo systemctl enable --now analyst-api
-# Adjust User/Group and the paths below to your host. Binds to a loopback port
-# (8010) behind nginx. No LLM key here - the only secret is the read-only
-# DATABASE_URL in backend/.env, which is git-ignored.
+# Paths and user below are the live deployment, not placeholders - the checkout
+# is in the service user's home. Binds to a loopback port (8010) behind nginx.
+# No LLM key here - the only secret is the read-only DATABASE_URL in
+# backend/.env, which is git-ignored.
 
 [Unit]
 Description=Automotive Analyst API (text-to-SQL)
@@ -11,15 +12,15 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=deploy
-Group=deploy
-WorkingDirectory=/opt/automotive-analyst/backend
-EnvironmentFile=/opt/automotive-analyst/backend/.env
+User=scott
+Group=scott
+WorkingDirectory=/home/scott/automotive-analyst/backend
+EnvironmentFile=/home/scott/automotive-analyst/backend/.env
 Environment="PYTHONUNBUFFERED=1"
 # Single worker on purpose: the rate limiter in app/ratelimit.py keeps its
 # buckets in process memory, so N workers would allow N x RATE_LIMIT_MAX. The
 # workload is async and DB-bound, so one worker is not the bottleneck.
-ExecStart=/opt/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 1
+ExecStart=/home/scott/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 1
 Restart=on-failure
 RestartSec=3
 
