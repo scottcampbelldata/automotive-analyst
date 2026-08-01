@@ -142,7 +142,7 @@ def test_existing_limit_is_preserved():
 
 def _summary():
     rows = []
-    for category, sql, goal in ATTACKS:
+    for category, sql, _goal in ATTACKS:
         ok, message, _ = validate_sql(sql)
         rows.append((category, not ok, message))
     blocked = sum(1 for _, b, _ in rows if b)

@@ -11,8 +11,12 @@ class FakeClient:
 
 
 class FakeRequest:
-    def __init__(self, xff=None, host="127.0.0.1"):
-        self.headers = {"x-forwarded-for": xff} if xff else {}
+    def __init__(self, xff=None, host="127.0.0.1", real_ip=None):
+        self.headers = {}
+        if xff:
+            self.headers["x-forwarded-for"] = xff
+        if real_ip:
+            self.headers["x-real-ip"] = real_ip
         self.client = FakeClient(host)
 
 
@@ -41,3 +45,25 @@ def test_uses_forwarded_for_behind_proxy():
     limiter.check(FakeRequest(xff="8.8.8.8", host="127.0.0.1"))
     with pytest.raises(HTTPException):
         limiter.check(FakeRequest(xff="9.9.9.9", host="127.0.0.1"))
+
+
+def test_spoofed_forwarded_for_prefix_cannot_reset_the_bucket():
+    """A client that prepends its own X-Forwarded-For hops must stay in one bucket.
+
+    nginx appends the real peer, so the LAST hop is the trustworthy one. Keying
+    on the first hop (the old behaviour) let a caller rotate the header and get
+    unlimited requests.
+    """
+    limiter = FixedWindowLimiter(max_requests=2, window_seconds=60)
+    limiter.check(FakeRequest(xff="1.1.1.1, 7.7.7.7", host="127.0.0.1"))
+    limiter.check(FakeRequest(xff="2.2.2.2, 7.7.7.7", host="127.0.0.1"))
+    with pytest.raises(HTTPException):
+        limiter.check(FakeRequest(xff="3.3.3.3, 7.7.7.7", host="127.0.0.1"))
+
+
+def test_real_ip_header_wins_over_forwarded_for():
+    """X-Real-IP is set by nginx from $remote_addr and cannot be spoofed through it."""
+    limiter = FixedWindowLimiter(max_requests=1, window_seconds=60)
+    limiter.check(FakeRequest(xff="1.1.1.1", real_ip="5.5.5.5", host="127.0.0.1"))
+    with pytest.raises(HTTPException):
+        limiter.check(FakeRequest(xff="9.9.9.9", real_ip="5.5.5.5", host="127.0.0.1"))

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import asyncpg
 
-from .config import DATABASE_URL
+from .config import DATABASE_URL, POOL_ACQUIRE_TIMEOUT_S
 
 _pool: asyncpg.Pool | None = None
 
@@ -32,6 +32,7 @@ def _clean(value):
 
 async def fetch_one(sql: str, *args) -> dict | None:
     assert _pool is not None, "pool not initialized"
-    async with _pool.acquire() as conn:
+    # Bounded acquire: never queue behind a saturated pool indefinitely.
+    async with _pool.acquire(timeout=POOL_ACQUIRE_TIMEOUT_S) as conn:
         row = await conn.fetchrow(sql, *args)
     return {k: _clean(v) for k, v in row.items()} if row else None

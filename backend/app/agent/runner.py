@@ -4,13 +4,19 @@ Even though guardrails.py already rejects writes, the database itself enforces
 read-only here as a second line of defense.
 """
 from .. import db
-from ..config import QUERY_TIMEOUT_MS
+from ..config import POOL_ACQUIRE_TIMEOUT_S, QUERY_TIMEOUT_MS
 
 
 async def run_readonly(sql: str, timeout_ms: int = QUERY_TIMEOUT_MS):
-    """Run sql in a read-only transaction. Returns (columns, rows)."""
+    """Run sql in a read-only transaction. Returns (columns, rows).
+
+    The acquire is bounded: the pool holds only a handful of connections and each
+    query may occupy one for the full statement timeout, so an unbounded wait let
+    a burst of slow queries stall every later request. TimeoutError surfaces to
+    the caller as a 503 rather than a hung request.
+    """
     assert db._pool is not None, "pool not initialized"
-    async with db._pool.acquire() as conn:
+    async with db._pool.acquire(timeout=POOL_ACQUIRE_TIMEOUT_S) as conn:
         # SET LOCAL keeps the timeout scoped to this transaction so it resets on
         # commit and never bleeds onto the next borrower of this pooled connection.
         async with conn.transaction(readonly=True):

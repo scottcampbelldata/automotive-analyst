@@ -40,5 +40,10 @@ MAX_SQL_CHARS = int(os.environ.get("MAX_SQL_CHARS", "4000"))
 RATE_LIMIT_MAX = int(os.environ.get("RATE_LIMIT_MAX", "20"))            # requests
 RATE_LIMIT_WINDOW_S = int(os.environ.get("RATE_LIMIT_WINDOW_S", "60"))  # per window
 QUERY_TIMEOUT_MS = int(os.environ.get("QUERY_TIMEOUT_MS", "5000"))
+# Ceiling on waiting for a free pooled connection. The pool is small (6) and each
+# query may hold a connection for QUERY_TIMEOUT_MS, so without a cap a burst of
+# slow queries makes every later request - including /health - block forever on
+# acquire(). Failing fast with a 503 is the honest response to a busy pool.
+POOL_ACQUIRE_TIMEOUT_S = float(os.environ.get("POOL_ACQUIRE_TIMEOUT_S", "3"))
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

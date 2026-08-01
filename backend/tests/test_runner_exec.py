@@ -49,9 +49,24 @@ class FakeAcquire:
 class FakePool:
     def __init__(self, conn):
         self.conn = conn
+        self.acquire_timeout = None
 
-    def acquire(self):
+    def acquire(self, *, timeout=None):
+        # Recorded so the bounded-acquire guarantee stays covered: an unbounded
+        # acquire is what let a saturated pool stall every request.
+        self.acquire_timeout = timeout
         return FakeAcquire(self.conn)
+
+
+async def test_run_readonly_bounds_the_connection_acquire(monkeypatch):
+    """acquire() must carry a timeout, or a busy pool makes requests hang."""
+    from app.config import POOL_ACQUIRE_TIMEOUT_S
+
+    conn = FakeConn([])
+    pool = FakePool(conn)
+    monkeypatch.setattr(db, "_pool", pool)
+    await runner.run_readonly("SELECT 1")
+    assert pool.acquire_timeout == POOL_ACQUIRE_TIMEOUT_S
 
 
 async def test_run_readonly_uses_set_local_inside_readonly_transaction(monkeypatch):

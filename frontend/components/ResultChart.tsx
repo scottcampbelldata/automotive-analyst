@@ -159,24 +159,43 @@ interface Scale {
   rightDomain?: [number, number];
 }
 
+// Fold a column of numbers without spreading it into Math.max/Math.min.
+// `Math.max(...rows)` passes one argument per row, which throws
+// "RangeError: Maximum call stack size exceeded" at roughly 125k arguments -
+// and a result set that large is reachable, since the guardrail accepts any
+// explicit LIMIT. A loop has no such ceiling.
+function extentOf(rows: Row[], keys: string[]): { min: number; max: number; count: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  let count = 0;
+  for (const r of rows) {
+    for (const k of keys) {
+      const v = Number(r[k]);
+      if (!Number.isFinite(v)) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      count++;
+    }
+  }
+  return { min, max, count };
+}
+
 // Decide axis assignment for a set of measures. Two measures whose magnitudes
 // differ by >=20x get split onto a dual axis; the right axis zooms to its own
 // data range (so e.g. yield % isn't crushed against a 0 baseline).
 function measureScale(rows: Row[], measures: string[]): Scale {
-  const maxes = measures.map((m) => Math.max(...rows.map((r) => Number(r[m]) || 0), 0));
-  const hi = Math.max(...maxes, 0);
+  const maxes = measures.map((m) => Math.max(extentOf(rows, [m]).max, 0));
+  const hi = Math.max(...maxes, 0); // one entry per measure - always a short list
   const lo = Math.min(...maxes.filter((x) => x > 0), hi);
   const dual = measures.length === 2 && hi / Math.max(lo, 1) >= 20;
   const rightKey = dual ? measures[1] : undefined;
   const leftKeys = measures.filter((m) => m !== rightKey);
-  const leftMax = Math.max(...rows.flatMap((r) => leftKeys.map((m) => Number(r[m]) || 0)), 0);
+  const leftMax = Math.max(extentOf(rows, leftKeys).max, 0);
   const leftDomain: [number, number] = [0, leftMax || 1];
   let rightDomain: [number, number] | undefined;
   if (rightKey) {
-    const vals = rows
-      .map((r) => Number(r[rightKey]))
-      .filter((v) => !Number.isNaN(v));
-    if (vals.length) rightDomain = [Math.min(...vals), Math.max(...vals)];
+    const { min, max, count } = extentOf(rows, [rightKey]);
+    if (count) rightDomain = [min, max];
   }
   return { rightKey, leftDomain, rightDomain };
 }
@@ -191,9 +210,13 @@ const CHAR_PX = 7.2; // 12px monospace
 const TICK_PX = 14; // tick mark + label padding
 
 function axisWidth(data: Row[], keys: string[], domain?: [number, number]): number {
-  const widest = domain
-    ? Math.max(Math.abs(domain[0]), Math.abs(domain[1]))
-    : Math.max(...data.flatMap((r) => keys.map((k) => Math.abs(Number(r[k])) || 0)), 0);
+  let widest: number;
+  if (domain) {
+    widest = Math.max(Math.abs(domain[0]), Math.abs(domain[1]));
+  } else {
+    const { min, max, count } = extentOf(data, keys);
+    widest = count ? Math.max(Math.abs(min), Math.abs(max)) : 0;
+  }
   const chars = formatValue(widest).length + 1;
   return Math.min(96, Math.max(44, Math.ceil(chars * CHAR_PX + TICK_PX)));
 }
@@ -358,31 +381,46 @@ function Cards({ cols, row }: { cols: string[]; row: Row }) {
   );
 }
 
+// The guardrail accepts any explicit LIMIT, so a result can be enormous. Only a
+// screenful is scrollable anyway, and rendering every row is what actually kills
+// the page: 200k rows is ~600k DOM nodes. Cap the render and say so, rather than
+// silently showing a truncated table as if it were the whole answer.
+const MAX_TABLE_ROWS = 500;
+
 function Table({ cols, rows }: { cols: string[]; rows: Row[] }) {
+  const shown = rows.length > MAX_TABLE_ROWS ? rows.slice(0, MAX_TABLE_ROWS) : rows;
   return (
-    <div className="overflow-auto max-h-[440px]">
-      <table className="data w-full">
-        <thead className="sticky top-0 bg-panel">
-          <tr className="text-left">
-            {cols.map((c) => (
-              <th key={c} className="py-1 pr-4">
-                {humanizeKey(c)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
+    <div>
+      <div className="overflow-auto max-h-[440px]">
+        <table className="data w-full">
+          <thead className="sticky top-0 bg-panel">
+            <tr className="text-left">
               {cols.map((c) => (
-                <td key={c} className="py-1.5 pr-4">
-                  {formatCell(r[c])}
-                </td>
+                <th key={c} className="py-1 pr-4">
+                  {humanizeKey(c)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={i}>
+                {cols.map((c) => (
+                  <td key={c} className="py-1.5 pr-4">
+                    {formatCell(r[c])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {shown.length < rows.length && (
+        <div className="text-xs text-mute mt-2">
+          Showing the first {formatValue(shown.length)} of {formatValue(rows.length)} rows. Add a
+          tighter LIMIT or aggregate in SQL to see a complete result.
+        </div>
+      )}
     </div>
   );
 }
