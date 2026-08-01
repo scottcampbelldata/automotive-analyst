@@ -51,5 +51,11 @@ app.include_router(ask.router)
 
 @app.get("/health")
 async def health():
-    row = await db.fetch_one("SELECT 1 AS ok")
+    # Unauthenticated and unthrottled, so it must never be able to block: the
+    # bounded acquire in db.fetch_one turns a saturated pool into a fast
+    # "db: false" instead of a request that hangs until something frees up.
+    try:
+        row = await db.fetch_one("SELECT 1 AS ok")
+    except TimeoutError:
+        return {"status": "degraded", "db": False, "detail": "connection pool busy"}
     return {"status": "ok", "db": bool(row and row["ok"] == 1)}

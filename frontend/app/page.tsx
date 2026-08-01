@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, RunResponse } from "@/lib/api";
 import { planQuery, repairSQL, summarizeResult, QueryPlan, SchemaContext } from "@/lib/providers";
 import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
@@ -79,6 +79,9 @@ export default function Home() {
   const [repaired, setRepaired] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [err, setErr] = useState<string | null>(null);
+  // A ref, not state: it has to be readable synchronously inside run(), before
+  // React has re-rendered with the new phase.
+  const runningRef = useRef(false);
 
   const loading = phase !== "idle";
   const providerLabel = creds ? PROVIDERS.find((p) => p.id === creds.provider)?.label : null;
@@ -92,11 +95,18 @@ export default function Home() {
   }, []);
 
   async function run(question: string) {
+    // Re-entrancy guard. The button is disabled while loading, but the input's
+    // Enter handler is not gated by React state, so holding Enter (key
+    // auto-repeat) fired a burst of concurrent runs - each one billing the
+    // visitor's own provider key, and each racing the others' state updates so a
+    // slow earlier answer could overwrite a newer one.
+    if (runningRef.current) return;
     if (!question.trim()) return;
     if (!creds) {
       setEditingKey(true);
       return;
     }
+    runningRef.current = true;
     let context = ctx;
     if (!context) {
       try {
@@ -104,6 +114,7 @@ export default function Home() {
         setCtx(context);
       } catch {
         setErr("Could not load the schema context from the API. Is the backend reachable?");
+        runningRef.current = false; // this return is outside the try/finally below
         return;
       }
     }
@@ -160,6 +171,7 @@ export default function Home() {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setPhase("idle");
+      runningRef.current = false;
     }
   }
 

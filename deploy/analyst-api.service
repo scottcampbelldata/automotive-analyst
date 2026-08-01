@@ -16,7 +16,10 @@ Group=deploy
 WorkingDirectory=/opt/automotive-analyst/backend
 EnvironmentFile=/opt/automotive-analyst/backend/.env
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=/opt/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 2
+# Single worker on purpose: the rate limiter in app/ratelimit.py keeps its
+# buckets in process memory, so N workers would allow N x RATE_LIMIT_MAX. The
+# workload is async and DB-bound, so one worker is not the bottleneck.
+ExecStart=/opt/automotive-analyst/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010 --workers 1
 Restart=on-failure
 RestartSec=3
 
