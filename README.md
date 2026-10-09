@@ -29,7 +29,7 @@ That means the backend has **no LLM secret at all**. Its only job is to be a
 runs it safely. Accepting client-supplied SQL is fine *by design* - that's exactly
 what the guardrails and the read-only database role are for.
 
-## Layered safety (the senior signal)
+## Layered safety
 
 Letting an LLM write SQL against a real database is where naive implementations
 get dangerous. The safety model is defense-in-depth:

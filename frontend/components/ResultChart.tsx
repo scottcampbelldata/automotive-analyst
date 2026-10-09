@@ -483,7 +483,7 @@ export function ResultChart({ res }: { res: RunResponse }) {
   }
 
   // Case B - series dimension + 2+ measures: small multiples. One mini chart per
-  // series value, all sharing the same axes/scales for honest comparison.
+  // series value, all sharing the same axes/scales for a fair comparison.
   if (seriesCol && measures.length >= 2 && !tooManyBars) {
     const seriesKeys = distinctValues(rows, seriesCol);
     if (seriesKeys.length <= 12) {
@@ -527,7 +527,7 @@ export function ResultChart({ res }: { res: RunResponse }) {
   // `!longFormat` is load-bearing: long format with no series split means two
   // grouping dimensions the chart can't express (e.g. GROUP BY root_cause_station,
   // detected_station), so the axis value repeats and one category renders as
-  // several identical-looking bars. A table is the honest rendering there.
+  // several identical-looking bars. A table is the better rendering there.
   if (!seriesCol && !longFormat && measures.length >= 1 && !tooManyBars) {
     const scale = measureScale(rows, measures);
     const data = isTime ? [...rows].sort(byDate(axisCol)) : rows;
