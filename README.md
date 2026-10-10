@@ -1,5 +1,9 @@
 # Automotive Analyst - bring-your-own-key text-to-SQL agent
 
+**Ask questions about an automotive plant's data in plain English and get back the answer along with the SQL query that produced it, using your own LLM API key.**
+
+Live at [analyst.scottcampbell.io](https://analyst.scottcampbell.io). More of my work is at [scottcampbell.io](https://scottcampbell.io).
+
 Ask an automotive final-assembly plant's data warehouse a question in plain
 English - *"which station lost the most hours on D-crew last quarter?"* - and your
 own LLM writes the PostgreSQL, the server validates it through read-only
