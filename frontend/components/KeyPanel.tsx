@@ -88,6 +88,7 @@ export function KeyPanel({
         <label className="text-[0.62rem] text-faint mono uppercase tracking-[0.13em]">Model</label>
         <input
           list={`models-${provider}`}
+          aria-label="Model"
           value={model}
           onChange={(e) => setModel(e.target.value)}
           className="field mono"
