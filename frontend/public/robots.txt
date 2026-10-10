@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://analyst.scottcampbell.io/sitemap.xml
