@@ -193,7 +193,7 @@ async function postJSON(
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
       throw new Error(
-        `${name} didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s - request cancelled. Try again.`,
+        `${name} didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s, so the request was cancelled. Try again.`,
       );
     }
     throw new Error(`${name} request failed: ${e instanceof Error ? e.message : String(e)}`);

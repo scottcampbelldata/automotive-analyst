@@ -13,17 +13,17 @@ const config: Config = {
         panel: "var(--panel)",
         "panel-2": "var(--panel-2)",
         edge: "var(--edge)",
-        accent: "var(--signal)", // brand amber, deepened on paper
-        good: "var(--good)", // andon green
-        warn: "var(--warn)", // andon amber
-        bad: "var(--bad)", // andon red
+        accent: "var(--signal)", // slate accent from the site tokens
+        good: "var(--good)", // pipeline status: passed
+        warn: "var(--warn)", // pipeline status: caution
+        bad: "var(--bad)", // pipeline status: failed
         mute: "var(--mute)",
         faint: "var(--faint)",
       },
       fontFamily: {
-        display: ["var(--font-display)", "sans-serif"],
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        display: ["var(--font-display)"],
+        sans: ["var(--font-sans)"],
+        mono: ["var(--font-mono)"],
       },
     },
   },

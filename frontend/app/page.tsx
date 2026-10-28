@@ -5,9 +5,8 @@ import { planQuery, repairSQL, summarizeResult, QueryPlan, SchemaContext } from 
 import { Creds, PROVIDERS, clearCreds, loadCreds } from "@/lib/keyStore";
 import { KeyPanel } from "@/components/KeyPanel";
 import { ResultChart } from "@/components/ResultChart";
-import { ThemeToggle } from "@/components/ThemeToggle";
-
-const DASHBOARD_URL = "https://factory.scottcampbell.io";
+import { ReportBand, CASE_STUDY, REPO } from "@/components/ReportBand";
+import { SiteBar, ConsultFooter } from "@/components/SiteFrame";
 
 type Phase = "idle" | "planning" | "running" | "repairing" | "summarizing";
 type Lamp = "off" | "amber" | "green" | "red";
@@ -25,7 +24,7 @@ const PHASE_LABEL: Record<Phase, string> = {
   idle: "",
   planning: "Checking the warehouse schema and writing SQL...",
   running: "Validating and running read-only...",
-  repairing: "Query failed - asking the model to fix it...",
+  repairing: "The query failed, so the model is fixing it...",
   summarizing: "Writing the answer from the result rows...",
 };
 
@@ -176,49 +175,25 @@ export default function Home() {
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 md:p-8 space-y-5">
-      {/* Control-console header */}
-      <header className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="eyebrow mb-2">Assembly-line analytics &middot; text-to-SQL console</div>
-          <h1 className="font-display text-4xl md:text-5xl font-semibold text-strong tracking-tight leading-none">
-            Automotive Analyst
-          </h1>
-          <p className="text-mute text-sm mt-3 max-w-2xl leading-relaxed">
-            Ask the assembly-plant warehouse a question in plain English. Your model
-            writes PostgreSQL, the server validates it through read-only guardrails and
-            runs it, and you always see the query behind the answer.
-          </p>
-        </div>
-        <div className="flex flex-col items-end gap-2 shrink-0">
-          <div className="flex gap-2">
-            <ThemeToggle />
-            <a href={DASHBOARD_URL} className="badge" target="_blank" rel="noreferrer">
-              Factory dashboard &#8599;
-            </a>
-          </div>
-          <span className="badge">
-            <span className="dot" /> read-only &middot; live
-          </span>
-        </div>
-      </header>
-
+    <>
+    <SiteBar caseStudy={CASE_STUDY} repo={REPO} />
+    <ReportBand />
+    <main className="max-w-[1120px] mx-auto px-5 sm:px-6 pt-8 space-y-7">
       {/* Key status / management */}
       {creds && !editingKey && (
-        <div className="flex items-center justify-between flex-wrap gap-2 text-sm">
-          <span className="text-mute mono text-xs">
-            <span className="text-faint">PROVIDER </span>
-            <span className="text-strong">{providerLabel}</span>
-            <span className="text-faint"> &middot; {creds.model}</span>
-            <span className="text-good"> &middot; key held in this tab only</span>
+        <div className="flex items-center justify-between flex-wrap gap-2 text-[0.95rem]">
+          <span className="text-mute">
+            Provider <span className="text-strong">{providerLabel}</span>, model{" "}
+            <span className="mono text-strong text-[0.85rem]">{creds.model}</span>.{" "}
+            <span className="text-good">The key is held in this tab only.</span>
           </span>
-          <span className="flex gap-3 text-xs">
-            <button onClick={() => setEditingKey(true)} className="text-mute hover:text-strong transition-colors">
+          <span className="flex gap-4">
+            <button onClick={() => setEditingKey(true)} className="btn-link">
               Change key
             </button>
             <button
               onClick={() => { clearCreds(); setCreds(null); }}
-              className="text-mute hover:text-bad transition-colors"
+              className="btn-link"
             >
               Clear
             </button>
@@ -235,19 +210,21 @@ export default function Home() {
       )}
 
       {/* Ask console */}
-      <div className="card space-y-4">
+      <section className="card space-y-4" aria-labelledby="ask-title">
+        <h2 id="ask-title" className="section-title">Ask the warehouse</h2>
         <div className="flex gap-2">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && run(q)}
             placeholder="e.g. which station lost the most hours on D-crew last quarter?"
+            aria-label="Question"
             className="field flex-1"
           />
           <button
             onClick={() => run(q)}
             disabled={loading}
-            className="btn-primary px-5 text-sm whitespace-nowrap"
+            className="btn-primary px-5 whitespace-nowrap"
           >
             {loading ? "Working..." : creds ? "Run query" : "Add key"}
           </button>
@@ -261,7 +238,7 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Andon rail - lights up as the pipeline runs */}
+        {/* Andon rail: lights up as the pipeline runs */}
         <div>
           <div className="andon">
             <AndonSeg name="Generate" lamp={gen} pulse={phase === "planning"} />
@@ -275,20 +252,20 @@ export default function Home() {
               />
             )}
           </div>
-          {loading && <div className="text-xs text-faint mono mt-2">{PHASE_LABEL[phase]}</div>}
+          {loading && <div className="text-sm text-mute italic mt-2">{PHASE_LABEL[phase]}</div>}
         </div>
-      </div>
+      </section>
 
       {err && (
         <div className="card">
-          <div className="text-bad font-medium mb-1">Couldn&apos;t complete the request</div>
+          <div className="text-bad font-semibold mb-1">Couldn&apos;t complete the request</div>
           <p className="text-sm text-mute">{err}</p>
         </div>
       )}
 
       {notEnoughData && (
         <div className="card">
-          <div className="text-warn font-medium mb-1">Not enough data in this warehouse</div>
+          <div className="text-warn font-semibold mb-1">Not enough data in this warehouse</div>
           <p className="text-sm text-mute">{notEnoughData}</p>
         </div>
       )}
@@ -299,25 +276,25 @@ export default function Home() {
             (res.ok ? (
               <>
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="section-title">Answer</div>
+                  <h2 className="section-title">Answer</h2>
                   <span className="flex gap-2">
                     {repaired && (
                       <span className="badge" style={{ color: "var(--warn)" }}>
-                        <span className="lamp amber" style={{ boxShadow: "none" }} /> self-corrected
+                        <span className="lamp amber" style={{ boxShadow: "none" }} /> Self-corrected
                       </span>
                     )}
                     <span className="badge" style={{ color: "var(--good)" }}>
-                      <span className="lamp green" style={{ boxShadow: "none" }} /> guardrail: {res.guardrail}
+                      <span className="lamp green" style={{ boxShadow: "none" }} /> Guardrail: {res.guardrail}
                     </span>
                   </span>
                 </div>
-                {answer && <p className="text-sm text-ink leading-relaxed">{answer}</p>}
+                {answer && <p className="text-[1.05rem] text-ink leading-relaxed max-w-3xl">{answer}</p>}
                 <ResultChart res={res} />
-                <div className="text-xs text-faint mono">{res.row_count} row(s) returned</div>
+                <div className="text-sm text-mute">{res.row_count} row(s) returned</div>
               </>
             ) : (
               <div>
-                <div className="text-bad font-medium mb-1">
+                <div className="text-bad font-semibold mb-1">
                   {res.stage === "guardrail"
                     ? "Query blocked by guardrails"
                     : `Could not answer (${res.stage})`}
@@ -328,11 +305,11 @@ export default function Home() {
 
           {genSql && (
             <div>
-              <div className="eyebrow mb-2" style={{ color: "var(--faint)" }}>
-                Generated SQL{providerLabel ? ` · ${providerLabel}` : ""}
+              <div className="eyebrow mb-2">
+                Generated SQL{providerLabel ? ` (${providerLabel})` : ""}
               </div>
               {plan?.reason && res?.ok && (
-                <div className="text-xs text-faint mb-2">{plan.reason}</div>
+                <div className="text-sm text-mute mb-2">{plan.reason}</div>
               )}
               <pre className="sql">{genSql}</pre>
             </div>
@@ -340,32 +317,32 @@ export default function Home() {
         </div>
       )}
 
-      {/* How it works - a real four-station sequence */}
-      <div className="card">
-        <div className="eyebrow mb-3">Line sequence &middot; how a question becomes an answer</div>
-        <div className="grid sm:grid-cols-4 gap-3 text-sm">
+      {/* How it works: the four-step sequence */}
+      <section className="card" aria-labelledby="how-title">
+        <h2 id="how-title" className="section-title mb-4">How a question becomes an answer</h2>
+        <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
           {[
-            ["01", "Your key", "Your provider key stays in this browser tab and calls Claude / OpenAI / Gemini directly, never our server."],
+            ["01", "Your key", "Your provider key stays in this browser tab and calls Claude, OpenAI or Gemini directly, never our server."],
             ["02", "Generate", "Your model writes one PostgreSQL SELECT, grounded in the star schema served by the API."],
             ["03", "Guardrail", "The server validates it: SELECT-only, single statement, allow-listed tables, LIMIT injected."],
             ["04", "Execute", "Run as a read-only role inside a read-only transaction with a statement timeout. Self-corrects once on error."],
           ].map(([n, t, d]) => (
-            <div key={n} className="border border-edge rounded-[10px] p-3.5 bg-[var(--panel-2)]">
-              <div className="flex items-baseline gap-2 mb-1.5">
-                <span className="font-display text-accent text-lg font-semibold leading-none">{n}</span>
-                <span className="text-strong text-xs font-semibold uppercase tracking-wider">{t}</span>
+            <li key={n} className="border-t border-edge pt-3">
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="mono text-accent text-[0.85rem]">{n}</span>
+                <span className="text-strong font-semibold">{t}</span>
               </div>
-              <div className="text-mute text-xs leading-relaxed">{d}</div>
-            </div>
+              <div className="text-mute text-[0.95rem] leading-relaxed">{d}</div>
+            </li>
           ))}
-        </div>
-      </div>
+        </ol>
+      </section>
 
-      <footer className="text-xs text-faint mono pt-4 border-t border-edge leading-relaxed">
-        Built by Scott Campbell &middot; FastAPI &middot; PostgreSQL &middot; Next.js &middot; Recharts.
-        Bring-your-own-key (Claude / OpenAI / Gemini); the key never touches the server. Reads the same
-        warehouse as the dashboard, read-only. Data is fully synthetic; no proprietary or employer data.
-      </footer>
+      <p className="text-sm text-mute pt-5 border-t border-edge leading-relaxed">
+        Stack: FastAPI, PostgreSQL, Next.js and Recharts.
+      </p>
     </main>
+    <ConsultFooter caseStudy={CASE_STUDY} />
+    </>
   );
 }

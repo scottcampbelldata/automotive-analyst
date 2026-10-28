@@ -28,9 +28,9 @@ import { Theme, useTheme } from "@/lib/theme";
 type Row = Record<string, string | number | null>;
 
 // Recharts paints SVG via JS props, not CSS classes, so the chart palette can't
-// ride on the CSS theme tokens - it mirrors them here, keyed by theme. Brand
-// amber first (deepened on paper for contrast), then a colorblind-friendly
-// spread for multi-series.
+// ride on the CSS theme tokens, so it mirrors them here, keyed by theme. The
+// chrome (axes, grid, tooltip) follows the site tokens; the series palette is
+// the original one, amber first, then a colorblind-friendly spread.
 const CHART: Record<Theme, {
   axis: string;
   grid: string;
@@ -42,23 +42,23 @@ const CHART: Record<Theme, {
   palette: string[];
 }> = {
   light: {
-    axis: "#62615d",
-    grid: "#d9cfc0",
-    tipBg: "#fffefb",
-    tipBorder: "#d9cfc0",
-    tipText: "#17191c",
-    cursorLine: "#bfb2a0",
-    cursorFill: "rgba(123,76,32,0.07)",
+    axis: "#4d5d63",
+    grid: "#d9dfe0",
+    tipBg: "#ffffff",
+    tipBorder: "#b9c4c7",
+    tipText: "#1b2a30",
+    cursorLine: "#b9c4c7",
+    cursorFill: "rgba(40,86,107,0.07)",
     palette: ["#7b4c20", "#3b7fc4", "#2f7757", "#8b4f86", "#2a7fa5", "#a43a35", "#4f8d76", "#7d7f28"],
   },
   dark: {
-    axis: "#a4aaa7",
-    grid: "#2d3233",
-    tipBg: "#1a1d1e",
-    tipBorder: "#2d3233",
-    tipText: "#ecefed",
-    cursorLine: "#414849",
-    cursorFill: "rgba(214,166,110,0.06)",
+    axis: "#a6b4b9",
+    grid: "#2b3539",
+    tipBg: "#182023",
+    tipBorder: "#3f4c51",
+    tipText: "#e6ecee",
+    cursorLine: "#3f4c51",
+    cursorFill: "rgba(140,193,214,0.07)",
     palette: ["#d6a66e", "#6ba1cf", "#6dc399", "#c083bd", "#68b8d5", "#e2847e", "#8bcbb0", "#c6c970"],
   },
 };
@@ -250,7 +250,7 @@ function MeasureChart({
   const TIP = {
     background: c.tipBg,
     border: `1px solid ${c.tipBorder}`,
-    borderRadius: 9,
+    borderRadius: 2,
     fontSize: 12,
     fontFamily: "var(--font-mono)",
     color: c.tipText,
@@ -496,8 +496,8 @@ export function ResultChart({ res }: { res: RunResponse }) {
               let data = rows.filter((r) => String(r[seriesCol]) === k);
               if (isTime) data = [...data].sort(byDate(axisCol));
               return (
-                <div key={k} className="border border-edge rounded-lg p-3">
-                  <div className="text-xs text-faint uppercase tracking-wider mb-2">
+                <div key={k} className="border-t-[1.5px] border-[var(--ink)] pt-3">
+                  <div className="text-[0.95rem] text-ink mb-2">
                     {humanizeKey(seriesCol)}: {formatLabel(k)}
                   </div>
                   <MeasureChart

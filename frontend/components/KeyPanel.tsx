@@ -38,14 +38,14 @@ export function KeyPanel({
   const keysUrl = PROVIDERS.find((p) => p.id === provider)!.keysUrl;
 
   return (
-    <div className="card space-y-4">
+    <section className="card card-form space-y-4" aria-labelledby="key-title">
       <div>
         <div className="eyebrow mb-1">Bring your own key</div>
-        <div className="section-title">Connect a model to run queries</div>
-        <p className="text-sm text-mute mt-1">
-          Pick a provider and paste an API key. It's stored only in this browser tab
-          and sent <strong className="text-strong">directly</strong> to the provider -
-          never to this site's server, and gone when you close the tab.
+        <h2 id="key-title" className="section-title">Connect a model to run queries</h2>
+        <p className="text-[0.95rem] text-mute mt-2 max-w-2xl">
+          Pick a provider and paste an API key. It is stored only in this browser tab
+          and sent <strong className="text-strong">directly</strong> to the provider,
+          never to this site&apos;s server, and it is gone when you close the tab.
         </p>
       </div>
 
@@ -54,11 +54,8 @@ export function KeyPanel({
           <button
             key={p.id}
             onClick={() => pickProvider(p.id)}
-            className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
-              provider === p.id
-                ? "border-accent text-strong bg-[var(--panel-2)]"
-                : "border-edge text-mute hover:text-strong"
-            }`}
+            aria-pressed={provider === p.id}
+            className={`provider flex-1 px-3 ${provider === p.id ? "is-on" : ""}`}
           >
             {p.label}
           </button>
@@ -66,8 +63,9 @@ export function KeyPanel({
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-[0.62rem] text-faint mono uppercase tracking-[0.13em]">API key</label>
+        <label htmlFor="api-key" className="field-label">API key</label>
         <input
+          id="api-key"
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
@@ -76,17 +74,18 @@ export function KeyPanel({
           autoComplete="off"
           className="field mono"
         />
-        <div className="text-xs text-faint">
+        <div className="text-sm text-mute">
           Need one?{" "}
-          <a href={keysUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+          <a href={keysUrl} target="_blank" rel="noreferrer" className="text-accent underline">
             Get a {PROVIDERS.find((p) => p.id === provider)!.label} key &#8599;
           </a>
         </div>
       </div>
 
       <div className="space-y-1.5">
-        <label className="text-[0.62rem] text-faint mono uppercase tracking-[0.13em]">Model</label>
+        <label htmlFor="model" className="field-label">Model</label>
         <input
+          id="model"
           list={`models-${provider}`}
           aria-label="Model"
           value={model}
@@ -104,19 +103,19 @@ export function KeyPanel({
         <button
           onClick={save}
           disabled={!key.trim()}
-          className="btn-primary px-5 py-2.5 text-sm"
+          className="btn-primary px-5"
         >
           Save key
         </button>
         {onCancel && (
           <button
             onClick={onCancel}
-            className="px-5 py-2.5 rounded-lg border border-edge text-mute text-sm hover:text-strong transition-colors"
+            className="btn-quiet px-5"
           >
             Cancel
           </button>
         )}
       </div>
-    </div>
+    </section>
   );
 }
